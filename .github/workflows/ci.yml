@@ -2,9 +2,9 @@ name: CI — profile_identity_backend
 
 on:
   push:
-    branches: [staging, main]
+    branches: [staging]
   pull_request:
-    branches: [main]
+    branches: [staging]
 
 env:
   SECRET_KEY: ci-test-secret-not-for-production
