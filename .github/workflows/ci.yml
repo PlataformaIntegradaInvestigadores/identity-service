@@ -1,0 +1,87 @@
+name: CI — profile_identity_backend
+
+on:
+  push:
+    branches: [staging, main]
+  pull_request:
+    branches: [main]
+
+env:
+  SECRET_KEY: ci-test-secret-not-for-production
+  JWT_SIGNING_KEY: ci-test-jwt-key-not-for-production
+  DEBUG: "True"
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_NAME: profile_identity_test
+  DB_USER: profile_identity
+  DB_PASSWORD: testpass123
+  USE_SQLITE_FOR_TESTS: "True"
+
+jobs:
+  # ── Tests ──────────────────────────────────────────────────────────────────
+  test:
+    name: Pruebas unitarias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt pytest pytest-django pytest-cov
+      - name: Ejecutar tests
+        run: |
+          pytest -v --tb=short \
+            --junitxml=report.xml \
+            --cov=. --cov-report=term --cov-report=xml:coverage.xml
+      - name: Subir resultados
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            report.xml
+            coverage.xml
+
+  # ── Deploy staging ─────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy a servidor staging
+    runs-on: self-hosted
+    needs: test
+    if: github.ref == 'refs/heads/staging'
+    steps:
+      - name: Actualizar codigo
+        run: |
+          cd /opt/centinela/profile_identity_backend
+          git fetch origin staging
+          git reset --hard origin/staging
+
+      - name: Reconstruir contenedor
+        run: |
+          cd /opt/centinela
+          docker compose up -d --build profile-identity-web
+
+      - name: Ejecutar migraciones
+        run: |
+          cd /opt/centinela
+          docker compose exec -T profile-identity-web python manage.py migrate --noinput
+
+      - name: Health check
+        run: |
+          sleep 15
+          HEALTHY=false
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/api/v1/ || echo "000")
+            echo "Intento $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "404" ]; then
+              HEALTHY=true; break
+            fi
+            sleep 6
+          done
+          if [ "$HEALTHY" = "false" ]; then
+            echo "Health check fallido — rollback"
+            cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
+            cd /opt/centinela && docker compose up -d --build profile-identity-web
+            exit 1
+          fi
