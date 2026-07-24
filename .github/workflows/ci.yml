@@ -60,7 +60,7 @@ jobs:
       - name: Reconstruir contenedor
         run: |
           cd /opt/centinela
-          docker compose up -d --build profile-identity-web
+          docker compose up -d --build --no-deps profile-identity-web
 
       - name: Ejecutar migraciones
         run: |
@@ -82,6 +82,6 @@ jobs:
           if [ "$HEALTHY" = "false" ]; then
             echo "Health check fallido — rollback"
             cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
-            cd /opt/centinela && docker compose up -d --build profile-identity-web
+            cd /opt/centinela && docker compose up -d --build --no-deps profile-identity-web
             exit 1
           fi
