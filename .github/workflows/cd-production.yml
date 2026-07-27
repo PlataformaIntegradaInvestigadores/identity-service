@@ -1,0 +1,85 @@
+name: "CD — profile_identity_backend → Producción"
+
+on:
+  push:
+    branches: [main]
+
+env:
+  SECRET_KEY: ci-test-secret-not-for-production
+  JWT_SIGNING_KEY: ci-test-jwt-key-not-for-production
+  DEBUG: "True"
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_NAME: profile_identity_test
+  DB_USER: profile_identity
+  DB_PASSWORD: testpass123
+  USE_SQLITE_FOR_TESTS: "True"
+
+jobs:
+  # ── Tests ────────────────────────────────────────────────────────────────
+  test:
+    name: Pruebas unitarias
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt pytest pytest-django pytest-cov
+      - name: Ejecutar tests
+        run: |
+          pytest -v --tb=short \
+            --junitxml=report-prod.xml \
+            --cov=. --cov-report=term --cov-report=xml:coverage-prod.xml
+      - name: Subir resultados
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-prod
+          path: |
+            report-prod.xml
+            coverage-prod.xml
+
+  # ── Deploy producción ───────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy a servidor producción
+    runs-on: [self-hosted, production]
+    needs: test
+    steps:
+      - name: Actualizar código
+        run: |
+          cd /opt/centinela/profile_identity_backend
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Reconstruir contenedor
+        run: |
+          cd /opt/centinela
+          docker compose up -d --build --no-deps profile-identity-web
+
+      - name: Ejecutar migraciones
+        run: |
+          cd /opt/centinela
+          docker compose exec -T profile-identity-web python manage.py migrate --noinput
+
+      - name: Health check con rollback automático
+        run: |
+          sleep 15
+          HEALTHY=false
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/api/v1/ || echo "000")
+            echo "Intento $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "404" ]; then
+              HEALTHY=true; break
+            fi
+            sleep 6
+          done
+          if [ "$HEALTHY" = "false" ]; then
+            echo "Health check fallido — rollback al commit anterior"
+            cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
+            cd /opt/centinela && docker compose up -d --build --no-deps profile-identity-web
+            exit 1
+          fi
+          echo "Deploy exitoso — profile_identity_backend en producción"
