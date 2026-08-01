@@ -17,6 +17,7 @@ from .application.use_cases import (
     update_user,
 )
 from .auth_sessions import create_auth_session, get_active_session_for_refresh, rotate_auth_session
+from .company_profiles import provision_company_profile
 from .mfa_services import (
     GENERIC_MFA_ERROR,
     MFAServiceError,
@@ -50,17 +51,23 @@ class UserListSerializer(serializers.ModelSerializer):
 
 
 class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
+    expected_account_type = User.AccountType.RESEARCHER
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token["user_id"] = user.id
+        token["user_type"] = "company" if user.account_type == User.AccountType.COMPANY else "user"
+        if user.account_type == User.AccountType.COMPANY:
+            token["company_id"] = user.id
+        else:
+            token["user_id"] = user.id
         return token
 
     def validate(self, attrs):
         request = self.context.get("request")
         username = attrs.get(self.username_field)
         password = attrs.get("password")
-        candidate_user = get_user_for_password_lockout(username)
+        candidate_user = get_user_for_password_lockout(username, self.expected_account_type)
         if candidate_user is not None and is_password_locked(candidate_user):
             emit_security_event(
                 event_type="account_locked",
@@ -73,10 +80,21 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
             )
             raise AuthenticationFailed(GENERIC_MFA_ERROR, code="authorization")
 
-        self.user = authenticate(request=request, **{self.username_field: username, "password": password})
-        if self.user is None or not self.user.is_active:
+        self.user = authenticate(
+            request=request,
+            **{
+                self.username_field: username,
+                "password": password,
+                "account_type": self.expected_account_type,
+            },
+        )
+        if (
+            self.user is None
+            or not self.user.is_active
+            or self.user.account_type != self.expected_account_type
+        ):
             failure = None
-            if candidate_user is not None and candidate_user.is_active:
+            if self.user is None and candidate_user is not None and candidate_user.is_active:
                 failure = record_password_failure(candidate_user)
             emit_security_event(
                 event_type="login_failed",
@@ -155,7 +173,9 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
                 "expires_in": challenge.expires_in,
             }
 
-        data = super().validate(attrs)
+        refresh = self.get_token(self.user)
+        data = {"refresh": str(refresh), "access": str(refresh.access_token)}
+        data.update(_principal_response_data(self.user))
         create_auth_session(user=self.user, raw_refresh_token=data["refresh"], request=request)
         emit_security_event(
             event_type="login_success",
@@ -166,6 +186,10 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
             user=self.user,
         )
         return data
+
+
+class CompanyTokenObtainPairSerializer(UserTokenObtainPairSerializer):
+    expected_account_type = User.AccountType.COMPANY
 
 
 class MFASetupSerializer(serializers.Serializer):
@@ -520,6 +544,81 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return register_user(validated_data)
 
+    def validate_username(self, value):
+        normalized = User.objects.normalize_email(value)
+        if User.objects.filter(
+            username__iexact=normalized,
+            account_type=User.AccountType.RESEARCHER,
+        ).exists():
+            raise serializers.ValidationError("Ya existe un investigador con este correo electrónico.")
+        return normalized
+
+
+class CompanyRegisterSerializer(serializers.Serializer):
+    company_name = serializers.CharField(max_length=200)
+    username = serializers.EmailField()
+    password = serializers.CharField(write_only=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True)
+    industry = serializers.CharField(max_length=20, default="other")
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, allow_null=True)
+    website = serializers.URLField(required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
+    address = serializers.CharField(max_length=300, required=False, allow_blank=True, allow_null=True)
+    founded_year = serializers.IntegerField(required=False, allow_null=True)
+    employee_count = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
+
+    def validate_company_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("El nombre de la empresa es requerido.")
+        return value
+
+    def validate_username(self, value):
+        normalized = User.objects.normalize_email(value)
+        if User.objects.filter(
+            username__iexact=normalized,
+            account_type=User.AccountType.COMPANY,
+        ).exists():
+            raise serializers.ValidationError("Ya existe una cuenta con este correo electrónico.")
+        return normalized
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs.pop("confirm_password"):
+            raise serializers.ValidationError({"confirm_password": "Las contraseñas no coinciden."})
+        candidate = User(
+            username=attrs["username"],
+            first_name="",
+            last_name="",
+            account_type=User.AccountType.COMPANY,
+        )
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+        return attrs
+
+    def create(self, validated_data):
+        identity_fields = {
+            "username": validated_data["username"],
+            "password": validated_data["password"],
+            "first_name": "",
+            "last_name": "",
+            "account_type": User.AccountType.COMPANY,
+        }
+        profile_data = validated_data.copy()
+        with transaction.atomic():
+            user = User.objects.create_user(**identity_fields)
+            provision_company_profile(user.id, profile_data)
+        self.company_name = profile_data["company_name"]
+        self.industry = profile_data.get("industry", "other")
+        return user
+
+
+def _principal_response_data(user):
+    if user.account_type == User.AccountType.COMPANY:
+        return {"company_id": user.id, "user_type": "company"}
+    return {"user_id": user.id, "user_type": "user"}
+
 
 class ProfileInformationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -545,7 +644,11 @@ class ProfileInformationSerializer(serializers.ModelSerializer):
 
 
 class GroupSerializer(serializers.ModelSerializer):
-    users = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), many=True, required=False)
+    users = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(account_type=User.AccountType.RESEARCHER),
+        many=True,
+        required=False,
+    )
 
     class Meta:
         model = Group

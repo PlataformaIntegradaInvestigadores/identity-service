@@ -14,10 +14,13 @@ class PasswordFailureResult:
     locked_until: datetime | None
 
 
-def get_user_for_password_lockout(username: str | None) -> User | None:
+def get_user_for_password_lockout(username: str | None, account_type: str) -> User | None:
     if not username:
         return None
-    return User.objects.filter(username__iexact=str(username).strip()).first()
+    return User.objects.filter(
+        username__iexact=str(username).strip(),
+        account_type=account_type,
+    ).first()
 
 
 def is_password_locked(user: User) -> bool:

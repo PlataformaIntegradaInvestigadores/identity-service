@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from unittest.mock import patch
 
 import pyotp
 from django.conf import settings
@@ -222,6 +223,93 @@ class IdentityApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(username="maria@example.com")
         self.assertTrue(ProfileInformation.objects.filter(user=user).exists())
+
+    @patch("identity.serializers.provision_company_profile")
+    def test_company_registration_creates_identity_account_and_social_profile(self, provision_profile):
+        response = self.client.post(
+            "/api/companies/register/",
+            {
+                "company_name": "Centinela Labs",
+                "username": "company@example.com",
+                "password": "StrongPass123",
+                "confirm_password": "StrongPass123",
+                "industry": "technology",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        company = User.objects.get(username="company@example.com")
+        self.assertEqual(company.account_type, User.AccountType.COMPANY)
+        self.assertTrue(company.check_password("StrongPass123"))
+        provision_profile.assert_called_once()
+        self.assertEqual(provision_profile.call_args.args[0], company.id)
+        self.assertEqual(response.data["company_id"], company.id)
+
+    def test_company_login_is_issued_and_validated_by_identity(self):
+        company = User.objects.create_user(
+            username="company@example.com",
+            password="StrongPass123",
+            first_name="",
+            last_name="",
+            account_type=User.AccountType.COMPANY,
+        )
+
+        response = self.client.post(
+            "/api/companies/token/",
+            {"username": company.username, "password": "StrongPass123"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["company_id"], company.id)
+        self.assertEqual(response.data["user_type"], "company")
+        self.assertNotIn("refresh", response.data)
+        self.assertIn("centinela_refresh", response.cookies)
+        token = AccessToken(response.data["access"])
+        self.assertEqual(token["sub"], company.id)
+        self.assertEqual(token["company_id"], company.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        validation = self.client.get("/internal/auth/validate-token/")
+        self.assertEqual(validation.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_auth_endpoints_do_not_accept_the_other_account_type(self):
+        company = User.objects.create_user(
+            username=self.user.username,
+            password="CompanyPass123",
+            first_name="",
+            last_name="",
+            account_type=User.AccountType.COMPANY,
+        )
+
+        researcher_endpoint = self.client.post(
+            "/api/token/",
+            {"username": company.username, "password": "CompanyPass123"},
+            format="json",
+        )
+        company_endpoint = self.client.post(
+            "/api/companies/token/",
+            {"username": self.user.username, "password": "StrongPass123"},
+            format="json",
+        )
+
+        self.assertEqual(researcher_endpoint.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(company_endpoint.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_researcher_directory_excludes_company_accounts(self):
+        User.objects.create_user(
+            username="company@example.com",
+            password="StrongPass123",
+            first_name="",
+            last_name="",
+            account_type=User.AccountType.COMPANY,
+        )
+        self.authenticate()
+
+        response = self.client.get("/api/users/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("company@example.com", [item["username"] for item in response.data])
 
     def test_register_rejects_weak_numeric_password(self):
         with self.assertLogs("security.events", level="INFO") as captured:
@@ -448,6 +536,31 @@ class MFASessionFlowTests(APITestCase):
         access = AccessToken(response.data["access"])
         self.assertTrue(access["mfa"])
         self.assertEqual(access["sub"], self.user.id)
+
+    def test_company_mfa_confirmation_preserves_company_session_type(self):
+        company = User.objects.create_user(
+            username=self.user.username,
+            password="CompanyPass123",
+            first_name="",
+            last_name="",
+            account_type=User.AccountType.COMPANY,
+        )
+        login = self.client.post(
+            "/api/companies/token/",
+            {"username": company.username, "password": "CompanyPass123"},
+            format="json",
+        )
+        setup = self.setup_from_challenge(login.data["mfa_challenge"])
+
+        response = self.confirm_from_challenge(
+            login.data["mfa_challenge"],
+            self.totp_code(setup.data["manual_key"]),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user_type"], "company")
+        self.assertEqual(response.data["company_id"], company.id)
+        self.assertEqual(AccessToken(response.data["access"])["company_id"], company.id)
 
     def test_login_with_mfa_enabled_requires_mfa_without_creating_new_session(self):
         self.enroll_user()

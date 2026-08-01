@@ -5,6 +5,7 @@ import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 
@@ -42,10 +43,20 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    class AccountType(models.TextChoices):
+        RESEARCHER = "researcher", "Researcher"
+        COMPANY = "company", "Company"
+
     id = models.CharField(max_length=10, primary_key=True, default=generate_unique_id, editable=False)
+    account_type = models.CharField(
+        max_length=20,
+        choices=AccountType.choices,
+        default=AccountType.RESEARCHER,
+        db_index=True,
+    )
     first_name = models.CharField(max_length=30)
     last_name = models.CharField(max_length=30)
-    username = models.EmailField(unique=True)
+    username = models.EmailField()
     password = models.CharField(max_length=128)
     scopus_id = models.CharField(max_length=20, null=True, blank=True)
     investigation_camp = models.CharField(max_length=100, null=True, blank=True)
@@ -109,6 +120,11 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.Index(fields=["password_locked_until"], name="identity_pwd_locked_until"),
         ]
         constraints = [
+            models.UniqueConstraint(
+                Lower("username"),
+                "account_type",
+                name="identity_unique_email_per_account_type",
+            ),
             models.UniqueConstraint(
                 fields=["scopus_id"],
                 name="identity_unique_scopus_id",

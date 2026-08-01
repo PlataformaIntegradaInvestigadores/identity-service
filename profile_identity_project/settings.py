@@ -97,6 +97,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "identity.User"
+AUTHENTICATION_BACKENDS = ["identity.authentication_backends.EmailAccountBackend"]
+SILENCED_SYSTEM_CHECKS = ["auth.W004"]
 
 CORS_ALLOW_CREDENTIALS = os.getenv("CORS_ALLOW_CREDENTIALS", "True") == "True"
 CORS_ALLOWED_ORIGINS = [
@@ -135,6 +137,8 @@ LEGACY_SYNC_BASE_URL = os.getenv("LEGACY_SYNC_BASE_URL", "").rstrip("/")
 LEGACY_SYNC_TOKEN = os.getenv("LEGACY_SYNC_TOKEN", "")
 LEGACY_SYNC_ENABLED = os.getenv("LEGACY_SYNC_ENABLED", "False") == "True"
 LEGACY_SYNC_RETRY_DELAY = timedelta(minutes=int(os.getenv("LEGACY_SYNC_RETRY_DELAY_MINUTES", "5")))
+COMPANY_PROFILE_SERVICE_URL = os.getenv("COMPANY_PROFILE_SERVICE_URL", LEGACY_SYNC_BASE_URL).rstrip("/")
+COMPANY_PROFILE_SYNC_TOKEN = os.getenv("COMPANY_PROFILE_SYNC_TOKEN", LEGACY_SYNC_TOKEN)
 
 JWT_REFRESH_COOKIE_NAME = os.getenv("JWT_REFRESH_COOKIE_NAME", "centinela_refresh")
 JWT_REFRESH_COOKIE_PATH = os.getenv("JWT_REFRESH_COOKIE_PATH", "/api")

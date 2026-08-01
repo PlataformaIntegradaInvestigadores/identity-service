@@ -27,6 +27,8 @@ from .security_events import emit_security_event
 from .serializers import (
     GroupDetailSerializer,
     GroupSerializer,
+    CompanyRegisterSerializer,
+    CompanyTokenObtainPairSerializer,
     MFAConfirmSerializer,
     MFASetupSerializer,
     MFAStatusSerializer,
@@ -69,7 +71,7 @@ class UserListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return User.objects.exclude(id=self.request.user.id)
+        return User.objects.filter(account_type=User.AccountType.RESEARCHER).exclude(id=self.request.user.id)
 
 
 class UserUpdateView(generics.UpdateAPIView):
@@ -106,6 +108,10 @@ class UserTokenObtainPairView(TokenObtainPairView):
             set_refresh_cookie(response, raw_refresh)
             response.data.pop("refresh", None)
         return response
+
+
+class CompanyTokenObtainPairView(UserTokenObtainPairView):
+    serializer_class = CompanyTokenObtainPairSerializer
 
 
 class MFASetupView(APIView):
@@ -364,7 +370,11 @@ def issue_final_auth_response(*, user, request, extra_data=None):
 
     auth_session = create_auth_session(user=user, raw_refresh_token=raw_refresh, request=request)
 
-    response_data = {"access": str(refresh.access_token)}
+    if user.account_type == User.AccountType.COMPANY:
+        principal_data = {"company_id": user.id, "user_type": "company"}
+    else:
+        principal_data = {"user_id": user.id, "user_type": "user"}
+    response_data = {"access": str(refresh.access_token), **principal_data}
     if extra_data:
         response_data.update(extra_data)
 
@@ -405,7 +415,7 @@ def clear_refresh_cookie(response):
 
 
 class UserDetailView(generics.RetrieveAPIView):
-    queryset = User.objects.all()
+    queryset = User.objects.filter(account_type=User.AccountType.RESEARCHER)
     serializer_class = UserSerializer
 
 
@@ -444,6 +454,27 @@ class RegisterView(generics.CreateAPIView):
             return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
             return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class CompanyRegisterView(generics.CreateAPIView):
+    serializer_class = CompanyRegisterSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        company_account = serializer.save()
+        return Response(
+            {
+                "message": "Empresa registrada exitosamente",
+                "company_id": company_account.id,
+                "company_name": serializer.company_name,
+                "username": company_account.username,
+                "industry": serializer.industry,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ProfileInformationDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -520,7 +551,7 @@ class GroupLeaveView(generics.GenericAPIView):
 
 
 class UserDetailViewtoGroup(generics.RetrieveAPIView):
-    queryset = User.objects.all()
+    queryset = User.objects.filter(account_type=User.AccountType.RESEARCHER)
     serializer_class = UserListSerializer
     permission_classes = [permissions.IsAuthenticated]
 

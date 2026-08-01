@@ -2,6 +2,8 @@ from django.urls import path, re_path
 
 from .views import (
     CustomTokenRefreshView,
+    CompanyRegisterView,
+    CompanyTokenObtainPairView,
     GroupDeleteView,
     GroupDetailView,
     GroupLeaveView,
@@ -26,6 +28,8 @@ from .views import (
 
 urlpatterns = [
     path("token/", UserTokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("companies/token/", CompanyTokenObtainPairView.as_view(), name="company-token-obtain-pair"),
+    path("companies/register/", CompanyRegisterView.as_view(), name="company-register"),
     path("token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("auth/mfa/setup/", MFASetupView.as_view(), name="mfa-setup"),
