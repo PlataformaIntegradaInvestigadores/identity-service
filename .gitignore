@@ -65,3 +65,6 @@ celerybeat.pid
 # Sistema operativo
 .DS_Store
 Thumbs.db
+
+# Agent configuration (local only, not committed)
+AGENTS.md
