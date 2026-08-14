@@ -23,7 +23,7 @@ services:
       - DB_HOST=profile-identity-db
       - DB_PORT=5432
     networks:
-      - default
+      default:
       centinela-net:
         aliases:
           - profile-identity-web
