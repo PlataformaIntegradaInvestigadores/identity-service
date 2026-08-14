@@ -24,7 +24,9 @@ services:
       - DB_PORT=5432
     networks:
       - default
-      - centinela-net
+      centinela-net:
+        aliases:
+          - profile-identity-web
 
   profile-identity-db:
     image: postgres:16
