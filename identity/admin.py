@@ -2,7 +2,6 @@ from django.contrib import admin
 
 from .models import Group, GroupMembership, ProfileInformation, User
 
-
 admin.site.register(User)
 admin.site.register(ProfileInformation)
 admin.site.register(Group)

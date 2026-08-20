@@ -4,7 +4,6 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -12,7 +11,9 @@ class LegacySyncClient:
     def __init__(self):
         self.base_url = settings.LEGACY_SYNC_BASE_URL
         self.token = settings.LEGACY_SYNC_TOKEN
-        self.enabled = settings.LEGACY_SYNC_ENABLED and bool(self.base_url and self.token)
+        self.enabled = settings.LEGACY_SYNC_ENABLED and bool(
+            self.base_url and self.token
+        )
 
     def post(self, path, payload, *, enqueue_on_failure=True):
         base_url = settings.LEGACY_SYNC_BASE_URL.rstrip("/")
@@ -39,7 +40,9 @@ def send_legacy_sync(path, payload, *, enqueue_on_failure=True):
             timeout=5,
         )
         if response.status_code == 410:
-            logger.info("Legacy sync endpoint retired for %s; event treated as completed.", path)
+            logger.info(
+                "Legacy sync endpoint retired for %s; event treated as completed.", path
+            )
             return True
         response.raise_for_status()
         return True
@@ -74,7 +77,9 @@ def retry_outbox_item(item):
             item.status = LegacySyncOutbox.Status.COMPLETED
             item.completed_at = timezone.now()
             item.last_error = ""
-            item.save(update_fields=["status", "completed_at", "last_error", "updated_at"])
+            item.save(
+                update_fields=["status", "completed_at", "last_error", "updated_at"]
+            )
             return True
     except Exception as exc:
         item.last_error = str(exc)
@@ -82,7 +87,15 @@ def retry_outbox_item(item):
     item.status = LegacySyncOutbox.Status.FAILED
     item.attempts += 1
     item.next_retry_at = timezone.now() + settings.LEGACY_SYNC_RETRY_DELAY
-    item.save(update_fields=["status", "attempts", "last_error", "next_retry_at", "updated_at"])
+    item.save(
+        update_fields=[
+            "status",
+            "attempts",
+            "last_error",
+            "next_retry_at",
+            "updated_at",
+        ]
+    )
     return False
 
 

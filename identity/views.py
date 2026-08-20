@@ -1,12 +1,16 @@
-from django.shortcuts import get_object_or_404
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import (
+    AuthenticationFailed,
+    InvalidToken,
+    TokenError,
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -18,27 +22,31 @@ from .application.use_cases import (
     validate_group_visibility,
 )
 from .auth_sessions import create_auth_session, revoke_session_for_refresh
-from .domain.exceptions import DomainPermissionDenied, DomainRuleViolation, DomainValidationError
+from .domain.exceptions import (
+    DomainPermissionDenied,
+    DomainRuleViolation,
+    DomainValidationError,
+)
 from .domain.policies import ensure_can_edit_user
-from .models import Group, ProfileInformation, User, UserMFASettings
 from .metrics import prometheus_metrics_response
+from .models import Group, ProfileInformation, User, UserMFASettings
 from .profile_services import ensure_profile_information
 from .security_events import emit_security_event
 from .serializers import (
-    GroupDetailSerializer,
-    GroupSerializer,
     CompanyRegisterSerializer,
     CompanyTokenObtainPairSerializer,
+    GroupDetailSerializer,
+    GroupSerializer,
     MFAConfirmSerializer,
     MFASetupSerializer,
     MFAStatusSerializer,
     MFAVerifySerializer,
     ProfileInformationSerializer,
     RegisterSerializer,
+    SessionTokenRefreshSerializer,
     UserGroupSerializer,
     UserListSerializer,
     UserSerializer,
-    SessionTokenRefreshSerializer,
     UserTokenObtainPairSerializer,
 )
 
@@ -71,7 +79,9 @@ class UserListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return User.objects.filter(account_type=User.AccountType.RESEARCHER).exclude(id=self.request.user.id)
+        return User.objects.filter(account_type=User.AccountType.RESEARCHER).exclude(
+            id=self.request.user.id
+        )
 
 
 class UserUpdateView(generics.UpdateAPIView):
@@ -149,7 +159,9 @@ class MFAConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = MFAConfirmSerializer(data=request.data, context={"request": request})
+        serializer = MFAConfirmSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
         emit_security_event(
@@ -172,7 +184,9 @@ class MFAVerifyView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = MFAVerifySerializer(data=request.data, context={"request": request})
+        serializer = MFAVerifySerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
         emit_security_event(
@@ -200,7 +214,9 @@ class MFAStatusView(APIView):
             user=request.user,
             mfa_enabled=mfa_settings.mfa_enabled,
         )
-        return Response(MFAStatusSerializer(mfa_settings).data, status=status.HTTP_200_OK)
+        return Response(
+            MFAStatusSerializer(mfa_settings).data, status=status.HTTP_200_OK
+        )
 
 
 class CustomTokenRefreshView(TokenRefreshView):
@@ -250,9 +266,14 @@ class LogoutView(APIView):
     authentication_classes = []
 
     def post(self, request):
-        raw_refresh = request.data.get("refresh") or request.COOKIES.get(settings.JWT_REFRESH_COOKIE_NAME)
+        raw_refresh = request.data.get("refresh") or request.COOKIES.get(
+            settings.JWT_REFRESH_COOKIE_NAME
+        )
         if not raw_refresh:
-            response = Response({"detail": "Refresh token is required."}, status=status.HTTP_400_BAD_REQUEST)
+            response = Response(
+                {"detail": "Refresh token is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
             clear_refresh_cookie(response)
             emit_security_event(
                 event_type="refresh_failed",
@@ -267,7 +288,9 @@ class LogoutView(APIView):
             session_revoked = revoke_session_for_refresh(raw_refresh)
             RefreshToken(raw_refresh).blacklist()
         except TokenError:
-            response = Response({"detail": "Invalid refresh token."}, status=status.HTTP_400_BAD_REQUEST)
+            response = Response(
+                {"detail": "Invalid refresh token."}, status=status.HTTP_400_BAD_REQUEST
+            )
             clear_refresh_cookie(response)
             emit_security_event(
                 event_type="refresh_failed",
@@ -314,7 +337,10 @@ class ValidateTokenView(APIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 reason="invalid_or_expired_token",
             )
-            return Response({"detail": "Invalid or expired token."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Invalid or expired token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         if authentication_result is None:
             emit_security_event(
                 event_type="invalid_token",
@@ -324,7 +350,10 @@ class ValidateTokenView(APIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 reason="missing_token",
             )
-            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
         user, validated_token = authentication_result
         if not user or not user.is_authenticated:
             emit_security_event(
@@ -335,7 +364,9 @@ class ValidateTokenView(APIView):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 reason="invalid_token_user",
             )
-            return Response({"detail": "Invalid token user."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Invalid token user."}, status=status.HTTP_401_UNAUTHORIZED
+            )
         if not user.is_active:
             emit_security_event(
                 event_type="invalid_token",
@@ -346,11 +377,15 @@ class ValidateTokenView(APIView):
                 user=user,
                 reason="inactive_user",
             )
-            return Response({"detail": "Inactive user."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "Inactive user."}, status=status.HTTP_403_FORBIDDEN
+            )
 
         response = Response(status=status.HTTP_204_NO_CONTENT)
         response["X-Authenticated-User-Id"] = str(user.id)
-        response["X-Authenticated-Token-Type"] = str(validated_token.get("token_type", ""))
+        response["X-Authenticated-Token-Type"] = str(
+            validated_token.get("token_type", "")
+        )
         emit_security_event(
             event_type="token_validated",
             severity="info",
@@ -368,7 +403,9 @@ def issue_final_auth_response(*, user, request, extra_data=None):
     refresh["mfa"] = True
     raw_refresh = str(refresh)
 
-    auth_session = create_auth_session(user=user, raw_refresh_token=raw_refresh, request=request)
+    auth_session = create_auth_session(
+        user=user, raw_refresh_token=raw_refresh, request=request
+    )
 
     if user.account_type == User.AccountType.COMPANY:
         principal_data = {"company_id": user.id, "user_type": "company"}
@@ -439,7 +476,9 @@ class RegisterView(generics.CreateAPIView):
                 status_code=status.HTTP_201_CREATED,
                 user=serializer.instance,
             )
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            return Response(
+                serializer.data, status=status.HTTP_201_CREATED, headers=headers
+            )
         except ValidationError:
             if "password" in serializer.errors:
                 emit_security_event(
@@ -451,9 +490,13 @@ class RegisterView(generics.CreateAPIView):
                     reason="password_validation_failed",
                     username=request.data.get("username"),
                 )
-            return Response({"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST
+            )
         except Exception as exc:
-            return Response({"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class CompanyRegisterView(generics.CreateAPIView):
@@ -547,7 +590,9 @@ class GroupLeaveView(generics.GenericAPIView):
             leave_group(request.user, group)
         except DomainRuleViolation as exc:
             raise_drf_domain_exception(exc)
-        return Response({"detail": "You have left the group."}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "You have left the group."}, status=status.HTTP_200_OK
+        )
 
 
 class UserDetailViewtoGroup(generics.RetrieveAPIView):
@@ -580,9 +625,13 @@ class RemoveMemberView(generics.GenericAPIView):
         try:
             user_to_remove = User.objects.get(id=user_id)
         except User.DoesNotExist:
-            return Response({"detail": "User does not exist."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "User does not exist."}, status=status.HTTP_404_NOT_FOUND
+            )
         try:
             remove_group_member(request.user, group, user_to_remove)
         except DomainRuleViolation as exc:
             raise_drf_domain_exception(exc)
-        return Response({"detail": "Member removed successfully."}, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "Member removed successfully."}, status=status.HTTP_200_OK
+        )

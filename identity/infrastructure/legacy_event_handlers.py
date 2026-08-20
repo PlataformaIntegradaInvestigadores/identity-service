@@ -15,12 +15,17 @@ from identity.profile_services import normalize_contact_info
 def handle_legacy_sync_event(event):
     if isinstance(event, (UserRegistered, UserUpdated)):
         user = User.objects.get(id=event.user_id)
-        legacy_sync_client.post("/internal/profile-sync/users/", serialize_user_for_sync(user))
+        legacy_sync_client.post(
+            "/internal/profile-sync/users/", serialize_user_for_sync(user)
+        )
         return
 
     if isinstance(event, ProfileInformationUpdated):
         profile = ProfileInformation.objects.get(user_id=event.user_id)
-        legacy_sync_client.post("/internal/profile-sync/profile-information/", serialize_profile_for_sync(profile))
+        legacy_sync_client.post(
+            "/internal/profile-sync/profile-information/",
+            serialize_profile_for_sync(profile),
+        )
         return
 
     if isinstance(event, ProfileInformationDeleted):
@@ -41,7 +46,9 @@ def handle_legacy_sync_event(event):
         return
 
     if isinstance(event, GroupDeleted):
-        legacy_sync_client.post("/internal/profile-sync/groups/", {"id": event.group_id, "deleted": True})
+        legacy_sync_client.post(
+            "/internal/profile-sync/groups/", {"id": event.group_id, "deleted": True}
+        )
 
 
 def serialize_user_for_sync(user):
@@ -85,7 +92,9 @@ def serialize_group_for_sync(group):
 
 
 def sync_group(group):
-    legacy_sync_client.post("/internal/profile-sync/groups/", serialize_group_for_sync(group))
+    legacy_sync_client.post(
+        "/internal/profile-sync/groups/", serialize_group_for_sync(group)
+    )
     legacy_sync_client.post(
         "/internal/profile-sync/group-memberships/",
         {"group_id": group.id, "users": list(group.users.values_list("id", flat=True))},

@@ -1,7 +1,10 @@
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
 
-from identity.company_profiles import CompanyProfileServiceUnavailable, fetch_legacy_company_identities
+from identity.company_profiles import (
+    CompanyProfileServiceUnavailable,
+    fetch_legacy_company_identities,
+)
 from identity.models import User
 
 
@@ -24,12 +27,18 @@ class Command(BaseCommand):
                 conflicts += 1
                 continue
 
-            email_owner = User.objects.filter(
-                username__iexact=username,
-                account_type=User.AccountType.COMPANY,
-            ).exclude(id=company_id).first()
+            email_owner = (
+                User.objects.filter(
+                    username__iexact=username,
+                    account_type=User.AccountType.COMPANY,
+                )
+                .exclude(id=company_id)
+                .first()
+            )
             id_owner = User.objects.filter(id=company_id).first()
-            if email_owner or (id_owner and id_owner.username.lower() != username.lower()):
+            if email_owner or (
+                id_owner and id_owner.username.lower() != username.lower()
+            ):
                 conflicts += 1
                 continue
 
@@ -44,7 +53,9 @@ class Command(BaseCommand):
             }
             try:
                 with transaction.atomic():
-                    _, was_created = User.objects.update_or_create(id=company_id, defaults=defaults)
+                    _, was_created = User.objects.update_or_create(
+                        id=company_id, defaults=defaults
+                    )
             except IntegrityError:
                 conflicts += 1
                 continue
@@ -53,8 +64,12 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Company identity sync complete: created={created}, updated={updated}, conflicts={conflicts}."
+                f"Company identity sync complete: created={created}, "
+                f"updated={updated}, conflicts={conflicts}."
             )
         )
         if conflicts:
-            raise CommandError("Company identity sync finished with conflicts; review duplicate IDs or emails.")
+            raise CommandError(
+                "Company identity sync finished with conflicts; review duplicate "
+                "IDs or emails."
+            )

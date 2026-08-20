@@ -15,7 +15,6 @@ from django.utils import timezone
 from .auth_sessions import get_client_ip
 from .models import MFAChallenge, User, UserMFASettings
 
-
 GENERIC_MFA_ERROR = "Invalid credentials or verification code"
 
 
@@ -100,7 +99,9 @@ def create_pending_enrollment_secret(user: User) -> MFAEnrollmentSecret:
 
 def build_otpauth_uri(*, user: User, secret: str) -> str:
     totp = _build_totp(secret)
-    return totp.provisioning_uri(name=user.username, issuer_name=settings.MFA_ISSUER_NAME)
+    return totp.provisioning_uri(
+        name=user.username, issuer_name=settings.MFA_ISSUER_NAME
+    )
 
 
 def build_qr_data_uri(otpauth_uri: str) -> str:
@@ -117,7 +118,9 @@ def hash_challenge_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
-def create_mfa_challenge(*, user: User, purpose: str, request=None) -> MFAChallengeIssue:
+def create_mfa_challenge(
+    *, user: User, purpose: str, request=None
+) -> MFAChallengeIssue:
     if purpose not in MFAChallenge.Purpose.values:
         raise ValueError(f"Unsupported MFA challenge purpose: {purpose}")
 
@@ -131,10 +134,14 @@ def create_mfa_challenge(*, user: User, purpose: str, request=None) -> MFAChalle
         ip_address=get_client_ip(request),
         user_agent=(request.META.get("HTTP_USER_AGENT", "") if request else "")[:512],
     )
-    return MFAChallengeIssue(token=raw_token, challenge=challenge, expires_in=expires_in)
+    return MFAChallengeIssue(
+        token=raw_token, challenge=challenge, expires_in=expires_in
+    )
 
 
-def get_valid_mfa_challenge(*, raw_token: str, purpose: str, user: User | None = None) -> MFAChallenge:
+def get_valid_mfa_challenge(
+    *, raw_token: str, purpose: str, user: User | None = None
+) -> MFAChallenge:
     query = MFAChallenge.objects.select_related("user").filter(
         challenge_token_hash=hash_challenge_token(raw_token),
         purpose=purpose,
@@ -190,7 +197,9 @@ def validate_totp_code(
 
 
 @transaction.atomic
-def activate_pending_mfa_secret(*, mfa_settings: UserMFASettings, timestep: int | None = None) -> UserMFASettings:
+def activate_pending_mfa_secret(
+    *, mfa_settings: UserMFASettings, timestep: int | None = None
+) -> UserMFASettings:
     mfa_settings = UserMFASettings.objects.select_for_update().get(pk=mfa_settings.pk)
     if not mfa_settings.pending_mfa_secret_encrypted:
         raise MFAServiceError(code="pending_mfa_secret_missing")
@@ -218,12 +227,21 @@ def activate_pending_mfa_secret(*, mfa_settings: UserMFASettings, timestep: int 
     return mfa_settings
 
 
-def record_mfa_success(*, mfa_settings: UserMFASettings, timestep: int | None = None) -> UserMFASettings:
+def record_mfa_success(
+    *, mfa_settings: UserMFASettings, timestep: int | None = None
+) -> UserMFASettings:
     mfa_settings.failed_attempts = 0
     mfa_settings.locked_until = None
     if timestep is not None:
         mfa_settings.last_used_totp_step = timestep
-    mfa_settings.save(update_fields=["failed_attempts", "locked_until", "last_used_totp_step", "updated_at"])
+    mfa_settings.save(
+        update_fields=[
+            "failed_attempts",
+            "locked_until",
+            "last_used_totp_step",
+            "updated_at",
+        ]
+    )
     return mfa_settings
 
 
@@ -243,7 +261,10 @@ def record_mfa_failure(
         challenge.failed_attempts += 1
         challenge_failed_attempts = challenge.failed_attempts
         update_fields = ["failed_attempts"]
-        if challenge.failed_attempts >= settings.MFA_CHALLENGE_MAX_FAILED_ATTEMPTS and challenge.used_at is None:
+        if (
+            challenge.failed_attempts >= settings.MFA_CHALLENGE_MAX_FAILED_ATTEMPTS
+            and challenge.used_at is None
+        ):
             challenge.used_at = now
             update_fields.append("used_at")
             challenge_invalidated = True
@@ -305,7 +326,12 @@ def _get_fernet() -> Fernet:
     if not raw_key:
         raise ImproperlyConfigured("MFA_SECRET_ENCRYPTION_KEY must be configured.")
     if not settings.DEBUG and raw_key == settings.SECRET_KEY:
-        raise ImproperlyConfigured("MFA_SECRET_ENCRYPTION_KEY must be independent from SECRET_KEY in production.")
+        raise ImproperlyConfigured(
+            "MFA_SECRET_ENCRYPTION_KEY must be independent from SECRET_KEY in "
+            "production."
+        )
 
-    derived_key = base64.urlsafe_b64encode(hashlib.sha256(raw_key.encode("utf-8")).digest())
+    derived_key = base64.urlsafe_b64encode(
+        hashlib.sha256(raw_key.encode("utf-8")).digest()
+    )
     return Fernet(derived_key)

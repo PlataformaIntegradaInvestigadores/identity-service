@@ -4,14 +4,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "profile-identity-dev-secret")
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
 DEBUG = os.getenv("DEBUG", "True") == "True"
-ALLOWED_HOSTS = [host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()]
+ALLOWED_HOSTS = [
+    host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()
+]
 
 INSTALLED_APPS = [
     "corsheaders",
@@ -79,8 +80,14 @@ else:
     }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {
+        "NAME": "django.contrib.auth.password_validation."
+        "UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -111,8 +118,12 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "15"))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_TOKEN_DAYS", "1"))),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "15"))
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=int(os.getenv("JWT_REFRESH_TOKEN_DAYS", "1"))
+    ),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "ALGORITHM": os.getenv("JWT_ALGORITHM", "HS256"),
@@ -136,14 +147,20 @@ REST_FRAMEWORK = {
 LEGACY_SYNC_BASE_URL = os.getenv("LEGACY_SYNC_BASE_URL", "").rstrip("/")
 LEGACY_SYNC_TOKEN = os.getenv("LEGACY_SYNC_TOKEN", "")
 LEGACY_SYNC_ENABLED = os.getenv("LEGACY_SYNC_ENABLED", "False") == "True"
-LEGACY_SYNC_RETRY_DELAY = timedelta(minutes=int(os.getenv("LEGACY_SYNC_RETRY_DELAY_MINUTES", "5")))
-COMPANY_PROFILE_SERVICE_URL = os.getenv("COMPANY_PROFILE_SERVICE_URL", LEGACY_SYNC_BASE_URL).rstrip("/")
+LEGACY_SYNC_RETRY_DELAY = timedelta(
+    minutes=int(os.getenv("LEGACY_SYNC_RETRY_DELAY_MINUTES", "5"))
+)
+COMPANY_PROFILE_SERVICE_URL = os.getenv(
+    "COMPANY_PROFILE_SERVICE_URL", LEGACY_SYNC_BASE_URL
+).rstrip("/")
 COMPANY_PROFILE_SYNC_TOKEN = os.getenv("COMPANY_PROFILE_SYNC_TOKEN", LEGACY_SYNC_TOKEN)
 
 JWT_REFRESH_COOKIE_NAME = os.getenv("JWT_REFRESH_COOKIE_NAME", "centinela_refresh")
 JWT_REFRESH_COOKIE_PATH = os.getenv("JWT_REFRESH_COOKIE_PATH", "/api")
 JWT_REFRESH_COOKIE_DOMAIN = os.getenv("JWT_REFRESH_COOKIE_DOMAIN") or None
-JWT_REFRESH_COOKIE_SECURE = os.getenv("JWT_REFRESH_COOKIE_SECURE", "False" if DEBUG else "True") == "True"
+JWT_REFRESH_COOKIE_SECURE = (
+    os.getenv("JWT_REFRESH_COOKIE_SECURE", "False" if DEBUG else "True") == "True"
+)
 JWT_REFRESH_COOKIE_SAMESITE = os.getenv("JWT_REFRESH_COOKIE_SAMESITE", "Lax")
 JWT_REFRESH_COOKIE_HTTPONLY = os.getenv("JWT_REFRESH_COOKIE_HTTPONLY", "True") == "True"
 JWT_REFRESH_COOKIE_MAX_AGE = int(SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds())
@@ -153,7 +170,9 @@ MFA_ISSUER_NAME = os.getenv("MFA_ISSUER_NAME", "Centinela")
 MFA_CHALLENGE_TTL_SECONDS = int(os.getenv("MFA_CHALLENGE_TTL_SECONDS", "300"))
 MFA_TOTP_INTERVAL_SECONDS = int(os.getenv("MFA_TOTP_INTERVAL_SECONDS", "30"))
 MFA_TOTP_VALID_WINDOW = int(os.getenv("MFA_TOTP_VALID_WINDOW", "1"))
-MFA_CHALLENGE_MAX_FAILED_ATTEMPTS = int(os.getenv("MFA_CHALLENGE_MAX_FAILED_ATTEMPTS", "3"))
+MFA_CHALLENGE_MAX_FAILED_ATTEMPTS = int(
+    os.getenv("MFA_CHALLENGE_MAX_FAILED_ATTEMPTS", "3")
+)
 MFA_LOCKOUT_FAILURE_THRESHOLD = int(os.getenv("MFA_LOCKOUT_FAILURE_THRESHOLD", "5"))
 MFA_LOCKOUT_MINUTES = [
     int(value.strip())
@@ -162,7 +181,9 @@ MFA_LOCKOUT_MINUTES = [
 ]
 MFA_SECRET_ENCRYPTION_KEY = os.getenv("MFA_SECRET_ENCRYPTION_KEY", SECRET_KEY)
 
-AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD = int(os.getenv("AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD", "5"))
+AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD = int(
+    os.getenv("AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD", "5")
+)
 AUTH_PASSWORD_LOCKOUT_MINUTES = [
     int(value.strip())
     for value in os.getenv("AUTH_PASSWORD_LOCKOUT_MINUTES", "5,15,30").split(",")
@@ -171,7 +192,9 @@ AUTH_PASSWORD_LOCKOUT_MINUTES = [
 
 SECURITY_LOG_SERVICE_NAME = os.getenv("SECURITY_LOG_SERVICE_NAME", "identity-backend")
 SECURITY_LOG_ENVIRONMENT = os.getenv("SECURITY_LOG_ENVIRONMENT", "dev")
-SECURITY_LOG_INCLUDE_USERNAME = os.getenv("SECURITY_LOG_INCLUDE_USERNAME", "True" if DEBUG else "False") == "True"
+SECURITY_LOG_INCLUDE_USERNAME = (
+    os.getenv("SECURITY_LOG_INCLUDE_USERNAME", "True" if DEBUG else "False") == "True"
+)
 DJANGO_ACCESS_LOGS_ENABLED = os.getenv("DJANGO_ACCESS_LOGS_ENABLED", "False") == "True"
 METRICS_ENABLED = os.getenv("METRICS_ENABLED", "True") == "True"
 
@@ -194,7 +217,11 @@ LOGGING = {
     },
     "loggers": {
         "identity": {"handlers": ["console"], "level": "INFO", "propagate": True},
-        "security.events": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "security.events": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
         "django.server": {
             "handlers": ["console"] if DJANGO_ACCESS_LOGS_ENABLED else ["null"],
             "level": "INFO",

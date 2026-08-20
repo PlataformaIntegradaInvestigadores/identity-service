@@ -15,7 +15,9 @@ class RequestIDMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        request_id = self._request_id_from_header(request) or self._generate_request_id()
+        request_id = (
+            self._request_id_from_header(request) or self._generate_request_id()
+        )
         request.request_id = request_id
 
         response = self.get_response(request)
@@ -41,7 +43,10 @@ class PrometheusMetricsMiddleware:
     def __call__(self, request):
         started_at = monotonic()
         response = self.get_response(request)
-        if getattr(settings, "METRICS_ENABLED", True) and request.path not in self.excluded_paths:
+        if (
+            getattr(settings, "METRICS_ENABLED", True)
+            and request.path not in self.excluded_paths
+        ):
             record_http_request(
                 request=request,
                 response=response,

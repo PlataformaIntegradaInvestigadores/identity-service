@@ -3,9 +3,14 @@ from __future__ import annotations
 from django.conf import settings
 from django.http import HttpResponse
 
-
 try:
-    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+    from prometheus_client import (
+        CONTENT_TYPE_LATEST,
+        Counter,
+        Gauge,
+        Histogram,
+        generate_latest,
+    )
 except ImportError:  # pragma: no cover - used only before dependencies are installed.
     CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
     Counter = Gauge = Histogram = None
@@ -44,26 +49,36 @@ def record_http_request(*, request, response, duration_seconds: float) -> None:
     route = _route_label(request)
     method = getattr(request, "method", "UNKNOWN")
     status_code = str(getattr(response, "status_code", 0))
-    HTTP_REQUESTS_TOTAL.labels(method=method, route=route, status_code=status_code).inc()
-    HTTP_REQUEST_DURATION_SECONDS.labels(method=method, route=route).observe(duration_seconds)
+    HTTP_REQUESTS_TOTAL.labels(
+        method=method, route=route, status_code=status_code
+    ).inc()
+    HTTP_REQUEST_DURATION_SECONDS.labels(method=method, route=route).observe(
+        duration_seconds
+    )
 
 
 def record_security_event(*, event_type: str, severity: str, outcome: str) -> None:
     if not _PROMETHEUS_AVAILABLE:
         return
-    SECURITY_EVENTS_TOTAL.labels(event_type=event_type, severity=severity, outcome=outcome).inc()
+    SECURITY_EVENTS_TOTAL.labels(
+        event_type=event_type, severity=severity, outcome=outcome
+    ).inc()
 
 
 def prometheus_metrics_response() -> HttpResponse:
     service = getattr(settings, "SECURITY_LOG_SERVICE_NAME", "identity-backend")
     environment = getattr(settings, "SECURITY_LOG_ENVIRONMENT", "dev")
     if not getattr(settings, "METRICS_ENABLED", True):
-        return HttpResponse("metrics disabled\n", status=404, content_type="text/plain; charset=utf-8")
+        return HttpResponse(
+            "metrics disabled\n", status=404, content_type="text/plain; charset=utf-8"
+        )
     if not _PROMETHEUS_AVAILABLE:
         payload = (
-            "# HELP identity_service_up Identity microservice metrics endpoint availability.\n"
+            "# HELP identity_service_up Identity microservice metrics endpoint "
+            "availability.\n"
             "# TYPE identity_service_up gauge\n"
-            f'identity_service_up{{service="{service}",environment="{environment}"}} 1\n'
+            f'identity_service_up{{service="{service}",'
+            f'environment="{environment}"}} 1\n'
         )
         return HttpResponse(payload, content_type=CONTENT_TYPE_LATEST)
 

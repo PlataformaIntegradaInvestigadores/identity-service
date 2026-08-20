@@ -11,8 +11,16 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
 from identity.legacy_sync import legacy_sync_client
-from identity.mfa_services import encrypt_secret, hash_challenge_token
-from identity.models import AuthSession, Group, LegacySyncOutbox, MFAChallenge, ProfileInformation, User, UserMFASettings
+from identity.mfa_services import hash_challenge_token
+from identity.models import (
+    AuthSession,
+    Group,
+    LegacySyncOutbox,
+    MFAChallenge,
+    ProfileInformation,
+    User,
+    UserMFASettings,
+)
 
 
 @override_settings(
@@ -103,7 +111,10 @@ class IdentityApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.user.refresh_from_db()
-        self.assertEqual(self.user.failed_login_attempts, settings.AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD)
+        self.assertEqual(
+            self.user.failed_login_attempts,
+            settings.AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD,
+        )
         self.assertIsNotNone(self.user.password_locked_until)
         self.assertGreater(self.user.password_locked_until, timezone.now())
         lock_event = _event_by_type(_security_events(captured), "account_locked")
@@ -225,7 +236,9 @@ class IdentityApiTests(APITestCase):
         self.assertTrue(ProfileInformation.objects.filter(user=user).exists())
 
     @patch("identity.serializers.provision_company_profile")
-    def test_company_registration_creates_identity_account_and_social_profile(self, provision_profile):
+    def test_company_registration_creates_identity_account_and_social_profile(
+        self, provision_profile
+    ):
         response = self.client.post(
             "/api/companies/register/",
             {
@@ -309,7 +322,9 @@ class IdentityApiTests(APITestCase):
         response = self.client.get("/api/users/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertNotIn("company@example.com", [item["username"] for item in response.data])
+        self.assertNotIn(
+            "company@example.com", [item["username"] for item in response.data]
+        )
 
     def test_register_rejects_weak_numeric_password(self):
         with self.assertLogs("security.events", level="INFO") as captured:
@@ -344,23 +359,35 @@ class IdentityApiTests(APITestCase):
         self.assertTrue(ProfileInformation.objects.filter(user=self.other).exists())
 
     def test_profile_information_normalizes_contact_info_to_list(self):
-        ProfileInformation.objects.create(user=self.other, contact_info={"email": "luis@example.com"})
+        ProfileInformation.objects.create(
+            user=self.other, contact_info={"email": "luis@example.com"}
+        )
 
         response = self.client.get(f"/api/profile-information/{self.other.id}/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["contact_info"], [{"type": "email", "value": "luis@example.com"}])
+        self.assertEqual(
+            response.data["contact_info"],
+            [{"type": "email", "value": "luis@example.com"}],
+        )
 
     def test_profile_information_own_and_public_contract(self):
         self.authenticate()
         response = self.client.put(
             "/api/profile-information/",
-            {"about_me": "Researcher", "disciplines": ["AI"], "contact_info": {"email": "ana@example.com"}},
+            {
+                "about_me": "Researcher",
+                "disciplines": ["AI"],
+                "contact_info": {"email": "ana@example.com"},
+            },
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["about_me"], "Researcher")
-        self.assertEqual(response.data["contact_info"], [{"type": "email", "value": "ana@example.com"}])
+        self.assertEqual(
+            response.data["contact_info"],
+            [{"type": "email", "value": "ana@example.com"}],
+        )
 
         public_response = self.client.get(f"/api/profile-information/{self.user.id}/")
         self.assertEqual(public_response.status_code, status.HTTP_200_OK)
@@ -383,13 +410,17 @@ class IdentityApiTests(APITestCase):
 
         group = Group.objects.get(id=group_id)
         self.assertEqual(group.admin_id, self.user.id)
-        self.assertEqual(set(group.users.values_list("id", flat=True)), {self.user.id, self.other.id})
+        self.assertEqual(
+            set(group.users.values_list("id", flat=True)), {self.user.id, self.other.id}
+        )
 
         list_response = self.client.get("/api/test/user/groups/")
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
         self.assertEqual(list_response.data[0]["id"], group_id)
 
-        remove_response = self.client.delete(f"/api/groups/{group_id}/remove-member/{self.other.id}/")
+        remove_response = self.client.delete(
+            f"/api/groups/{group_id}/remove-member/{self.other.id}/"
+        )
         self.assertEqual(remove_response.status_code, status.HTTP_200_OK)
         self.assertEqual(set(group.users.values_list("id", flat=True)), {self.user.id})
 
@@ -398,7 +429,9 @@ class IdentityApiTests(APITestCase):
         group = Group.objects.create(title="Group", description="D", admin=self.user)
         group.users.add(self.user)
 
-        response = self.client.post(f"/api/test/user/groups/{group.id}/leave/", {}, format="json")
+        response = self.client.post(
+            f"/api/test/user/groups/{group.id}/leave/", {}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -456,15 +489,21 @@ class MFASessionFlowTests(APITestCase):
         )
 
     def totp_code(self, secret, offset=0):
-        for_time = timezone.now() + timedelta(seconds=settings.MFA_TOTP_INTERVAL_SECONDS * offset)
-        return pyotp.TOTP(secret, interval=settings.MFA_TOTP_INTERVAL_SECONDS).at(for_time)
+        for_time = timezone.now() + timedelta(
+            seconds=settings.MFA_TOTP_INTERVAL_SECONDS * offset
+        )
+        return pyotp.TOTP(secret, interval=settings.MFA_TOTP_INTERVAL_SECONDS).at(
+            for_time
+        )
 
     def wrong_totp_code(self, secret, offset=0):
         valid_code = self.totp_code(secret, offset=offset)
         return "000000" if valid_code != "000000" else "111111"
 
     def challenge_object(self, raw_token):
-        return MFAChallenge.objects.get(challenge_token_hash=hash_challenge_token(raw_token))
+        return MFAChallenge.objects.get(
+            challenge_token_hash=hash_challenge_token(raw_token)
+        )
 
     def start_enrollment(self):
         response = self.login()
@@ -477,7 +516,9 @@ class MFASessionFlowTests(APITestCase):
         setup_response = self.setup_from_challenge(challenge)
         self.assertEqual(setup_response.status_code, status.HTTP_200_OK)
         manual_key = setup_response.data["manual_key"]
-        confirm_response = self.confirm_from_challenge(challenge, self.totp_code(manual_key))
+        confirm_response = self.confirm_from_challenge(
+            challenge, self.totp_code(manual_key)
+        )
         self.assertEqual(confirm_response.status_code, status.HTTP_200_OK)
         return manual_key, confirm_response
 
@@ -573,7 +614,9 @@ class MFASessionFlowTests(APITestCase):
         self.assertIn("mfa_challenge", response.data)
         self.assertNotIn("access", response.data)
         self.assertNotIn(settings.JWT_REFRESH_COOKIE_NAME, response.cookies)
-        self.assertEqual(AuthSession.objects.filter(user=self.user).count(), session_count)
+        self.assertEqual(
+            AuthSession.objects.filter(user=self.user).count(), session_count
+        )
 
     def test_mfa_verify_success_emits_access_cookie_and_session(self):
         manual_key, _ = self.enroll_user()
@@ -581,13 +624,17 @@ class MFASessionFlowTests(APITestCase):
         challenge = self.start_mfa_login()
 
         with self.assertLogs("security.events", level="INFO") as captured:
-            response = self.verify_from_challenge(challenge, self.totp_code(manual_key, offset=1))
+            response = self.verify_from_challenge(
+                challenge, self.totp_code(manual_key, offset=1)
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
         self.assertNotIn("refresh", response.data)
         self.assertIn(settings.JWT_REFRESH_COOKIE_NAME, response.cookies)
-        self.assertEqual(AuthSession.objects.filter(user=self.user).count(), session_count + 1)
+        self.assertEqual(
+            AuthSession.objects.filter(user=self.user).count(), session_count + 1
+        )
         self.assertTrue(AccessToken(response.data["access"])["mfa"])
         events = _security_events(captured)
         self.assertEqual(_event_by_type(events, "mfa_success")["outcome"], "success")
@@ -601,7 +648,9 @@ class MFASessionFlowTests(APITestCase):
         manual_key, _ = self.enroll_user()
         challenge = self.start_mfa_login()
 
-        response = self.verify_from_challenge(challenge, self.wrong_totp_code(manual_key, offset=1))
+        response = self.verify_from_challenge(
+            challenge, self.wrong_totp_code(manual_key, offset=1)
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         mfa_settings = UserMFASettings.objects.get(user=self.user)
@@ -614,7 +663,9 @@ class MFASessionFlowTests(APITestCase):
 
         for _ in range(settings.MFA_LOCKOUT_FAILURE_THRESHOLD):
             challenge = self.start_mfa_login()
-            response = self.verify_from_challenge(challenge, self.wrong_totp_code(manual_key, offset=1))
+            response = self.verify_from_challenge(
+                challenge, self.wrong_totp_code(manual_key, offset=1)
+            )
             self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
         mfa_settings = UserMFASettings.objects.get(user=self.user)
@@ -655,7 +706,9 @@ class MFASessionFlowTests(APITestCase):
         session.refresh_from_db()
         self.assertFalse(session.is_active)
         self.assertIn(settings.JWT_REFRESH_COOKIE_NAME, response.cookies)
-        self.assertEqual(response.cookies[settings.JWT_REFRESH_COOKIE_NAME]["max-age"], 0)
+        self.assertEqual(
+            response.cookies[settings.JWT_REFRESH_COOKIE_NAME]["max-age"], 0
+        )
 
     def test_refresh_after_logout_fails(self):
         self.enroll_user()
@@ -663,7 +716,9 @@ class MFASessionFlowTests(APITestCase):
         logout_response = self.client.post("/api/logout/", {}, format="json")
         self.assertEqual(logout_response.status_code, status.HTTP_204_NO_CONTENT)
 
-        response = self.client.post("/api/token/refresh/", {"refresh": raw_refresh}, format="json")
+        response = self.client.post(
+            "/api/token/refresh/", {"refresh": raw_refresh}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
@@ -690,7 +745,9 @@ class MFASessionFlowTests(APITestCase):
         self.user.is_active = False
         self.user.save(update_fields=["is_active"])
 
-        response = self.client.post("/api/token/refresh/", {"refresh": raw_refresh}, format="json")
+        response = self.client.post(
+            "/api/token/refresh/", {"refresh": raw_refresh}, format="json"
+        )
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
@@ -706,7 +763,9 @@ class MFASessionFlowTests(APITestCase):
         self.assertIn("access", response.data)
         self.assertNotIn("refresh", response.data)
         self.assertIn(settings.JWT_REFRESH_COOKIE_NAME, response.cookies)
-        self.assertNotEqual(response.cookies[settings.JWT_REFRESH_COOKIE_NAME].value, original_refresh)
+        self.assertNotEqual(
+            response.cookies[settings.JWT_REFRESH_COOKIE_NAME].value, original_refresh
+        )
         session.refresh_from_db()
         self.assertNotEqual(session.refresh_jti, original_jti)
 

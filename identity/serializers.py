@@ -4,10 +4,13 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.exceptions import AuthenticationFailed
 from rest_framework import serializers, status
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
 
 from .application.use_cases import (
     create_group,
@@ -16,12 +19,22 @@ from .application.use_cases import (
     update_profile_information,
     update_user,
 )
-from .auth_sessions import create_auth_session, get_active_session_for_refresh, rotate_auth_session
+from .auth_sessions import (
+    create_auth_session,
+    get_active_session_for_refresh,
+    rotate_auth_session,
+)
 from .company_profiles import provision_company_profile
+from .login_lockout import (
+    get_user_for_password_lockout,
+    is_password_locked,
+    record_password_failure,
+    reset_password_failures,
+)
 from .mfa_services import (
     GENERIC_MFA_ERROR,
-    MFAServiceError,
     MFALockedError,
+    MFAServiceError,
     activate_pending_mfa_secret,
     create_mfa_challenge,
     create_pending_enrollment_secret,
@@ -32,12 +45,6 @@ from .mfa_services import (
     record_mfa_failure,
     record_mfa_success,
     validate_totp_code,
-)
-from .login_lockout import (
-    get_user_for_password_lockout,
-    is_password_locked,
-    record_password_failure,
-    reset_password_failures,
 )
 from .models import Group, MFAChallenge, ProfileInformation, User, UserMFASettings
 from .profile_services import normalize_contact_info
@@ -56,7 +63,9 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token["user_type"] = "company" if user.account_type == User.AccountType.COMPANY else "user"
+        token["user_type"] = (
+            "company" if user.account_type == User.AccountType.COMPANY else "user"
+        )
         if user.account_type == User.AccountType.COMPANY:
             token["company_id"] = user.id
         else:
@@ -67,7 +76,9 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
         request = self.context.get("request")
         username = attrs.get(self.username_field)
         password = attrs.get("password")
-        candidate_user = get_user_for_password_lockout(username, self.expected_account_type)
+        candidate_user = get_user_for_password_lockout(
+            username, self.expected_account_type
+        )
         if candidate_user is not None and is_password_locked(candidate_user):
             emit_security_event(
                 event_type="account_locked",
@@ -94,7 +105,11 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
             or self.user.account_type != self.expected_account_type
         ):
             failure = None
-            if self.user is None and candidate_user is not None and candidate_user.is_active:
+            if (
+                self.user is None
+                and candidate_user is not None
+                and candidate_user.is_active
+            ):
                 failure = record_password_failure(candidate_user)
             emit_security_event(
                 event_type="login_failed",
@@ -176,7 +191,9 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
         refresh = self.get_token(self.user)
         data = {"refresh": str(refresh), "access": str(refresh.access_token)}
         data.update(_principal_response_data(self.user))
-        create_auth_session(user=self.user, raw_refresh_token=data["refresh"], request=request)
+        create_auth_session(
+            user=self.user, raw_refresh_token=data["refresh"], request=request
+        )
         emit_security_event(
             event_type="login_success",
             severity="info",
@@ -203,7 +220,9 @@ class MFASetupSerializer(serializers.Serializer):
                 MFAChallenge.Purpose.ENROLLMENT,
                 request=request,
             )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(user=challenge.user)
+            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
+                user=challenge.user
+            )
             if mfa_settings.mfa_enabled:
                 _raise_mfa_validation_error()
 
@@ -234,7 +253,9 @@ class MFAConfirmSerializer(serializers.Serializer):
                 MFAChallenge.Purpose.ENROLLMENT,
                 request=request,
             )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(user=challenge.user)
+            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
+                user=challenge.user
+            )
 
             try:
                 pending_secret = get_pending_totp_secret(mfa_settings)
@@ -268,7 +289,9 @@ class MFAConfirmSerializer(serializers.Serializer):
                 _raise_mfa_validation_error()
 
             if not validation.valid:
-                failure = record_mfa_failure(mfa_settings=mfa_settings, challenge=challenge)
+                failure = record_mfa_failure(
+                    mfa_settings=mfa_settings, challenge=challenge
+                )
                 emit_security_event(
                     event_type="mfa_failed",
                     severity="warning",
@@ -292,7 +315,9 @@ class MFAConfirmSerializer(serializers.Serializer):
                     )
                 should_raise_failure = True
             else:
-                activate_pending_mfa_secret(mfa_settings=mfa_settings, timestep=validation.timestep)
+                activate_pending_mfa_secret(
+                    mfa_settings=mfa_settings, timestep=validation.timestep
+                )
                 mark_challenge_used(challenge)
                 self.user = challenge.user
                 self.challenge = challenge
@@ -319,7 +344,9 @@ class MFAVerifySerializer(serializers.Serializer):
                 MFAChallenge.Purpose.LOGIN,
                 request=request,
             )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(user=challenge.user)
+            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
+                user=challenge.user
+            )
 
             try:
                 active_secret = get_active_totp_secret(mfa_settings)
@@ -353,7 +380,9 @@ class MFAVerifySerializer(serializers.Serializer):
                 _raise_mfa_validation_error()
 
             if not validation.valid:
-                failure = record_mfa_failure(mfa_settings=mfa_settings, challenge=challenge)
+                failure = record_mfa_failure(
+                    mfa_settings=mfa_settings, challenge=challenge
+                )
                 emit_security_event(
                     event_type="mfa_failed",
                     severity="warning",
@@ -377,7 +406,9 @@ class MFAVerifySerializer(serializers.Serializer):
                     )
                 should_raise_failure = True
             else:
-                record_mfa_success(mfa_settings=mfa_settings, timestep=validation.timestep)
+                record_mfa_success(
+                    mfa_settings=mfa_settings, timestep=validation.timestep
+                )
                 mark_challenge_used(challenge)
                 self.user = challenge.user
                 self.challenge = challenge
@@ -394,7 +425,9 @@ class MFAStatusSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-def _get_locked_mfa_challenge(raw_token: str, purpose: str, request=None) -> MFAChallenge:
+def _get_locked_mfa_challenge(
+    raw_token: str, purpose: str, request=None
+) -> MFAChallenge:
     challenge = (
         MFAChallenge.objects.select_for_update()
         .select_related("user")
@@ -448,15 +481,21 @@ class SessionTokenRefreshSerializer(TokenRefreshSerializer):
         try:
             session = get_active_session_for_refresh(attrs["refresh"])
         except TokenError as exc:
-            raise AuthenticationFailed("Refresh token session is not active.", code="token_not_valid") from exc
+            raise AuthenticationFailed(
+                "Refresh token session is not active.", code="token_not_valid"
+            ) from exc
         if session is None:
-            raise AuthenticationFailed("Refresh token session is not active.", code="token_not_valid")
+            raise AuthenticationFailed(
+                "Refresh token session is not active.", code="token_not_valid"
+            )
         self.auth_session = session
 
         data = super().validate(attrs)
         rotated_refresh = data.get("refresh")
         if rotated_refresh:
-            rotate_auth_session(session=session, raw_refresh_token=rotated_refresh, request=request)
+            rotate_auth_session(
+                session=session, raw_refresh_token=rotated_refresh, request=request
+            )
         else:
             session.last_seen_at = timezone.now()
             session.save(update_fields=["last_seen_at"])
@@ -550,7 +589,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             username__iexact=normalized,
             account_type=User.AccountType.RESEARCHER,
         ).exists():
-            raise serializers.ValidationError("Ya existe un investigador con este correo electrónico.")
+            raise serializers.ValidationError(
+                "Ya existe un investigador con este correo electrónico."
+            )
         return normalized
 
 
@@ -560,12 +601,20 @@ class CompanyRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8)
     confirm_password = serializers.CharField(write_only=True)
     industry = serializers.CharField(max_length=20, default="other")
-    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, allow_null=True)
+    description = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True, allow_null=True
+    )
     website = serializers.URLField(required=False, allow_blank=True, allow_null=True)
-    phone = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
-    address = serializers.CharField(max_length=300, required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(
+        max_length=20, required=False, allow_blank=True, allow_null=True
+    )
+    address = serializers.CharField(
+        max_length=300, required=False, allow_blank=True, allow_null=True
+    )
     founded_year = serializers.IntegerField(required=False, allow_null=True)
-    employee_count = serializers.CharField(max_length=20, required=False, allow_blank=True, allow_null=True)
+    employee_count = serializers.CharField(
+        max_length=20, required=False, allow_blank=True, allow_null=True
+    )
 
     def validate_company_name(self, value):
         value = value.strip()
@@ -579,12 +628,16 @@ class CompanyRegisterSerializer(serializers.Serializer):
             username__iexact=normalized,
             account_type=User.AccountType.COMPANY,
         ).exists():
-            raise serializers.ValidationError("Ya existe una cuenta con este correo electrónico.")
+            raise serializers.ValidationError(
+                "Ya existe una cuenta con este correo electrónico."
+            )
         return normalized
 
     def validate(self, attrs):
         if attrs["password"] != attrs.pop("confirm_password"):
-            raise serializers.ValidationError({"confirm_password": "Las contraseñas no coinciden."})
+            raise serializers.ValidationError(
+                {"confirm_password": "Las contraseñas no coinciden."}
+            )
         candidate = User(
             username=attrs["username"],
             first_name="",
@@ -664,7 +717,14 @@ class UserGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
         fields = ["id", "title", "description", "admin_id", "users", "voting_type"]
-        read_only_fields = ["id", "title", "description", "admin_id", "users", "voting_type"]
+        read_only_fields = [
+            "id",
+            "title",
+            "description",
+            "admin_id",
+            "users",
+            "voting_type",
+        ]
 
 
 class GroupDetailSerializer(serializers.ModelSerializer):

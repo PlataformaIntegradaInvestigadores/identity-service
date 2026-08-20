@@ -6,7 +6,6 @@ from django.utils import timezone
 
 from .metrics import record_security_event
 
-
 SECURITY_LOGGER_NAME = "security.events"
 SECURITY_LOGGER = logging.getLogger(SECURITY_LOGGER_NAME)
 SENSITIVE_FIELD_NAMES = {
@@ -58,7 +57,10 @@ def emit_security_event(
         if key not in SENSITIVE_FIELD_NAMES and value is not None:
             event[key] = value
 
-    SECURITY_LOGGER.log(_level_for_severity(severity), json.dumps(_compact(event), ensure_ascii=True, sort_keys=True))
+    SECURITY_LOGGER.log(
+        _level_for_severity(severity),
+        json.dumps(_compact(event), ensure_ascii=True, sort_keys=True),
+    )
     record_security_event(event_type=event_type, severity=severity, outcome=outcome)
 
 

@@ -4,9 +4,13 @@ from .models import User
 
 
 class EmailAccountBackend(ModelBackend):
-    """Authenticate the selected account type without conflating company and person accounts."""
+    """Authenticate the selected account type without conflating company and person
+    accounts.
+    """
 
-    def authenticate(self, request, username=None, password=None, account_type=None, **kwargs):
+    def authenticate(
+        self, request, username=None, password=None, account_type=None, **kwargs
+    ):
         if username is None or password is None:
             return None
         selected_type = account_type or User.AccountType.RESEARCHER
