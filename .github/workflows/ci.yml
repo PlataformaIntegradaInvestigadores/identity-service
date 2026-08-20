@@ -24,8 +24,9 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Verificar prefijo (feature/*, hotfix/*, chore/*)
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          BRANCH="${{ github.head_ref }}"
           case "$BRANCH" in
             feature/*|hotfix/*|chore/*) echo "OK: $BRANCH"; exit 0 ;;
             *) echo "Rama '$BRANCH' no cumple convención (feature/*, hotfix/*, chore/*)"; exit 1 ;;
@@ -60,15 +61,15 @@ jobs:
   # ── Deploy staging ─────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy a servidor staging
-    runs-on: self-hosted
+    runs-on: [self-hosted, staging]
     needs: test
-    if: github.ref == 'refs/heads/staging'
+    if: github.ref == 'refs/heads/develop'
     steps:
       - name: Actualizar codigo
         run: |
           cd /opt/centinela/profile_identity_backend
-          git fetch origin staging
-          git reset --hard origin/staging
+          git fetch origin develop
+          git reset --hard origin/develop
 
       - name: Reconstruir contenedor
         run: |
