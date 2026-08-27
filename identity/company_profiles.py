@@ -52,6 +52,6 @@ def fetch_legacy_company_identities():
             timeout=10,
         )
         response.raise_for_status()
+        return response.json().get("companies", [])
     except (requests.RequestException, ValueError) as exc:
         raise CompanyProfileServiceUnavailable() from exc
-    return response.json().get("companies", [])

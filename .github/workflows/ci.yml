@@ -19,25 +19,15 @@ env:
 
 jobs:
   branch-name:
-    name: Validar nombre de rama
-    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    steps:
-      - name: Verificar prefijo (feature/*, hotfix/*, chore/*)
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          case "$BRANCH" in
-            feature/*|hotfix/*|chore/*) echo "OK: $BRANCH"; exit 0 ;;
-            *) echo "Rama '$BRANCH' no cumple convención (feature/*, hotfix/*, chore/*)"; exit 1 ;;
-          esac
+    uses: PlataformaIntegradaInvestigadores/.github/.github/workflows/branch-name.yml@main
 
   # ── Tests ──────────────────────────────────────────────────────────────────
   test:
     name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -50,13 +40,26 @@ jobs:
             --junitxml=report.xml \
             --cov=. --cov-report=term --cov-report=xml:coverage.xml
       - name: Subir resultados
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
           path: |
             report.xml
             coverage.xml
+
+  # ── Docker build ───────────────────────────────────────────────────────────
+  build-docker:
+    name: Build imagen Docker
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build imagen
+        run: docker build -t profile_identity_backend:${{ github.sha }} .
+      - name: Verificar imagen
+        run: docker images profile_identity_backend
 
   # ── Deploy staging ─────────────────────────────────────────────────────────
   deploy-staging:

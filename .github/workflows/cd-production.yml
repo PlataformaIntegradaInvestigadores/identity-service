@@ -21,7 +21,7 @@ jobs:
     name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,7 +34,7 @@ jobs:
             --junitxml=report-prod.xml \
             --cov=. --cov-report=term --cov-report=xml:coverage-prod.xml
       - name: Subir resultados
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-prod
