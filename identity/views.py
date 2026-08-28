@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.db import connection
 from django.shortcuts import get_object_or_404
@@ -51,6 +53,8 @@ from .serializers import (
     UserTokenObtainPairSerializer,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def raise_drf_domain_exception(exc):
     if isinstance(exc, DomainPermissionDenied):
@@ -66,8 +70,9 @@ class HealthLiveView(APIView):
     def get(self, request):
         try:
             connection.ensure_connection()
-        except Exception as exc:
-            return Response({"status": "error", "error": str(exc)}, status=503)
+        except Exception:
+            logger.exception("Health check DB failure")
+            return Response({"status": "error"}, status=503)
         return Response({"status": "ok"})
 
 
