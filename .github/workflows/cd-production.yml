@@ -21,7 +21,7 @@ jobs:
     name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,7 +34,7 @@ jobs:
             --junitxml=report-prod.xml \
             --cov=. --cov-report=term --cov-report=xml:coverage-prod.xml
       - name: Subir resultados
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-prod
@@ -57,12 +57,12 @@ jobs:
       - name: Reconstruir contenedor
         run: |
           cd /opt/centinela
-          docker compose up -d --build --no-deps profile-identity-web
+          docker compose up -d --build --no-deps identity-service
 
       - name: Ejecutar migraciones
         run: |
           cd /opt/centinela
-          docker compose exec -T profile-identity-web python manage.py migrate --noinput
+          docker compose exec -T identity-service python manage.py migrate --noinput
 
       - name: Health check con rollback automático
         run: |
@@ -79,7 +79,7 @@ jobs:
           if [ "$HEALTHY" = "false" ]; then
             echo "Health check fallido — rollback al commit anterior"
             cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
-            cd /opt/centinela && docker compose up -d --build --no-deps profile-identity-web
+            cd /opt/centinela && docker compose up -d --build --no-deps identity-service
             exit 1
           fi
           echo "Deploy exitoso — profile_identity_backend en producción"
