@@ -1,8 +1,8 @@
-# Centinela — profile_identity_backend
+# Centinela — identity-service
 
 Servicio de autenticación e identidad: login/JWT, sesiones, MFA (TOTP), bloqueo por intentos fallidos, perfiles de usuario/empresa y sincronización con el monolito legado.
 
-Parte del org multi-repo `PlataformaIntegradaInvestigadores`. Comparte el puerto interno 8002 con `search_microservice_backend` (que mapea al host en 8004); este servicio publica 8002 directo. En producción se accede a través de `api-gateway`.
+Parte del org multi-repo `PlataformaIntegradaInvestigadores`. Comparte el puerto interno 8002 con `search-bff-service` (que mapea al host en 8004); este servicio publica 8002 directo. En producción se accede a través de `gateway-service`.
 
 ## Stack
 
@@ -28,7 +28,7 @@ identity/
 profile_identity_project/       # settings, urls, wsgi/asgi
 ```
 
-Nota: la app mezcla capas explícitas (`application/`, `domain/`, `infrastructure/`) con módulos planos de responsabilidad única (auth, MFA, lockout, sync) — no sigue el layout Clean/Hexagonal completo que sí usan `social_consensus_backend` y `search_engine_backend`.
+Nota: la app mezcla capas explícitas (`application/`, `domain/`, `infrastructure/`) con módulos planos de responsabilidad única (auth, MFA, lockout, sync) — no sigue el layout Clean/Hexagonal completo que sí usan `social-service` y `search-service`.
 
 ## Requisitos previos
 

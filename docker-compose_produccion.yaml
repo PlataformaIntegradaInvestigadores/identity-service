@@ -2,7 +2,7 @@
 # docker compose --env-file .env_produccion -f docker-compose_produccion.yaml up -d
 
 services:
-  profile-identity-web:
+  identity-service:
     build: .
     restart: unless-stopped
     security_opt:
@@ -15,13 +15,13 @@ services:
     expose:
       - "8002"
     depends_on:
-      profile-identity-db:
+      identity-db:
         condition: service_healthy
     env_file:
       - path: .env_produccion
         required: false
     environment:
-      - DB_HOST=profile-identity-db
+      - DB_HOST=identity-db
       - DB_PORT=5432
       - USE_SQLITE_FOR_TESTS=False
     volumes:
@@ -29,9 +29,9 @@ services:
     networks:
       centinela-net:
         aliases:
-          - profile-identity-web
+          - identity-service
 
-  profile-identity-db:
+  identity-db:
     image: postgres:16
     restart: unless-stopped
     expose:
@@ -50,7 +50,7 @@ services:
     networks:
       centinela-net:
         aliases:
-          - profile-identity-db
+          - identity-db
 
 volumes:
   profile_identity_postgres_data:
