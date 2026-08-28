@@ -70,7 +70,7 @@ jobs:
     steps:
       - name: Actualizar codigo
         run: |
-          cd /opt/centinela/profile_identity_backend
+          cd /opt/centinela/identity-service
           git fetch origin develop
           git reset --hard origin/develop
 
@@ -98,7 +98,7 @@ jobs:
           done
           if [ "$HEALTHY" = "false" ]; then
             echo "Health check fallido — rollback"
-            cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
+            cd /opt/centinela/identity-service && git reset --hard HEAD~1
             cd /opt/centinela && docker compose up -d --build --no-deps identity-service
             exit 1
           fi
