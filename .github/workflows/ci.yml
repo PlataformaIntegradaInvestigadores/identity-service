@@ -38,7 +38,7 @@ jobs:
         run: |
           pytest -v --tb=short \
             --junitxml=report.xml \
-            --cov=. --cov-report=term --cov-report=xml:coverage.xml
+            --cov=. --cov-report=term --cov-report=xml:coverage.xml --cov-fail-under=90
       - name: Subir resultados
         uses: actions/upload-artifact@v7
         if: always()
