@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.db import connection
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -63,7 +64,11 @@ class HealthLiveView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        return Response({"status": "alive"})
+        try:
+            connection.ensure_connection()
+        except Exception as exc:
+            return Response({"status": "error", "error": str(exc)}, status=503)
+        return Response({"status": "ok"})
 
 
 class MetricsView(APIView):

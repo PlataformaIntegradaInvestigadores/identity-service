@@ -14,7 +14,7 @@ urlpatterns = [
         name="validate-token",
     ),
     path("internal/metrics/", MetricsView.as_view(), name="internal-metrics"),
-    path("health/live/", include("identity.health_urls")),
+    path("health/", include("identity.health_urls")),
 ]
 
 if settings.DEBUG:

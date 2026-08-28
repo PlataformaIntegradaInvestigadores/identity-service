@@ -61,7 +61,7 @@ class IdentityApiTests(APITestCase):
         self.assertNotIn("refresh", token_response)
 
     def test_request_id_header_is_reused_in_response(self):
-        response = self.client.get("/health/live/", HTTP_X_REQUEST_ID="req-test-123")
+        response = self.client.get("/health/", HTTP_X_REQUEST_ID="req-test-123")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.headers["X-Request-ID"], "req-test-123")
