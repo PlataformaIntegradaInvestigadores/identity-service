@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     "identity",
 ]
 
@@ -142,6 +143,20 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.AllowAny",
     ],
     "EXCEPTION_HANDLER": "identity.exception_handlers.security_exception_handler",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Identity API",
+    "DESCRIPTION": "Usuarios, perfiles, grupos, JWT y MFA",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    # Recorta el prefijo interno del spec y lo reemplaza por la ruta publica
+    # detras del gateway (nginx.conf: /api/identity/ -> /api/), para que
+    # "Try it out" en Swagger UI pegue a la URL real.
+    "SCHEMA_PATH_PREFIX": "/api",
+    "SCHEMA_PATH_PREFIX_TRIM": True,
+    "SERVERS": [{"url": "/api/identity", "description": "Gateway"}],
 }
 
 LEGACY_SYNC_BASE_URL = os.getenv("LEGACY_SYNC_BASE_URL", "").rstrip("/")
