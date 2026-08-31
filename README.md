@@ -8,6 +8,7 @@ Parte del org multi-repo `PlataformaIntegradaInvestigadores`. Comparte el puerto
 
 - Django 5 + Django REST Framework + Gunicorn
 - `djangorestframework-simplejwt` (JWT), `pyotp` + `qrcode` (MFA/TOTP), `cryptography` (cifrado de secretos MFA)
+- `drf-spectacular` (schema OpenAPI)
 - PostgreSQL 16
 - `prometheus-client` (métricas)
 
@@ -66,6 +67,10 @@ Ver `.env.example` / `.env_produccion.example`. Variables clave:
 | `LEGACY_SYNC_*`, `COMPANY_PROFILE_SERVICE_URL` | Sincronización con el sistema legado y perfiles de empresa |
 | `DB_NAME` / `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` | Conexión a PostgreSQL |
 | `USE_SQLITE_FOR_TESTS` | `True` para correr tests/desarrollo sin Postgres real |
+
+## Documentación (Swagger)
+
+Schema OpenAPI: `GET /api/schema/?format=json`. Sin UI propia — el Swagger UI lo sirve el hub centralizado del `gateway-service` en `/api/docs/v1/identity`. `SPECTACULAR_SETTINGS` recorta el prefijo interno `/api` y declara `servers: [{"url": "/api/identity"}]` para que "Try it out" funcione a través del gateway.
 
 ## Tests
 
