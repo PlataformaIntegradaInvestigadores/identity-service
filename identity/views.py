@@ -1,4 +1,5 @@
 import logging
+import socket
 
 from django.conf import settings
 from django.db import connection
@@ -64,16 +65,38 @@ def raise_drf_domain_exception(exc):
     raise exc
 
 
+def _local_ip() -> str:
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return "unknown"
+
+
 class HealthLiveView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         try:
             connection.ensure_connection()
+            db_status = "ok"
         except Exception:
             logger.exception("Health check DB failure")
-            return Response({"status": "error"}, status=503)
-        return Response({"status": "ok"})
+            db_status = "error"
+
+        ok = db_status == "ok"
+        payload = {
+            "server_name": "identity-service",
+            "ip_address": _local_ip(),
+            "global_status": "Online" if ok else "Offline",
+            "groups": [
+                {
+                    "group_name": "Database",
+                    "group_status": "Operativo" if ok else "Caído",
+                    "services": [{"name": "postgres", "status": db_status}],
+                }
+            ],
+        }
+        return Response(payload, status=200 if ok else 503)
 
 
 class MetricsView(APIView):
