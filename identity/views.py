@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -74,6 +75,7 @@ def _local_ip() -> str:
 
 class HealthLiveView(APIView):
     permission_classes = [permissions.AllowAny]
+    renderer_classes = [JSONRenderer]
 
     def get(self, request):
         try:
