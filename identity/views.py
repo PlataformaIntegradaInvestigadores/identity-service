@@ -92,9 +92,9 @@ class HealthLiveView(APIView):
             "global_status": "Online" if ok else "Offline",
             "groups": [
                 {
-                    "group_name": "Database",
+                    "group_name": "Identidad y Autenticación",
                     "group_status": "Operativo" if ok else "Caído",
-                    "services": [{"name": "postgres", "status": db_status}],
+                    "services": [{"name": "postgresql", "status": db_status}],
                 }
             ],
         }
