@@ -2,16 +2,21 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView
 
 from identity.views import MetricsView, ValidateTokenView
 
-
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/", include("identity.urls")),
-    path("internal/auth/validate-token/", ValidateTokenView.as_view(), name="validate-token"),
+    path(
+        "internal/auth/validate-token/",
+        ValidateTokenView.as_view(),
+        name="validate-token",
+    ),
     path("internal/metrics/", MetricsView.as_view(), name="internal-metrics"),
-    path("health/live/", include("identity.health_urls")),
+    path("health/", include("identity.health_urls")),
 ]
 
 if settings.DEBUG:

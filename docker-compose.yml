@@ -1,5 +1,5 @@
 services:
-  profile-identity-web:
+  identity-service:
     build: .
     restart: unless-stopped
     security_opt:
@@ -16,19 +16,19 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - profile-identity-db
+      - identity-db
     env_file:
       - .env
     environment:
-      - DB_HOST=profile-identity-db
+      - DB_HOST=identity-db
       - DB_PORT=5432
     networks:
       default:
       centinela-net:
         aliases:
-          - profile-identity-web
+          - identity-service
 
-  profile-identity-db:
+  identity-db:
     image: postgres:16
     restart: unless-stopped
     ports:

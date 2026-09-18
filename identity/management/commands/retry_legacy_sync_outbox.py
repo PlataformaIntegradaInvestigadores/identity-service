@@ -16,7 +16,10 @@ class Command(BaseCommand):
         limit = options["limit"]
         candidates = (
             LegacySyncOutbox.objects.filter(
-                status__in=[LegacySyncOutbox.Status.PENDING, LegacySyncOutbox.Status.FAILED],
+                status__in=[
+                    LegacySyncOutbox.Status.PENDING,
+                    LegacySyncOutbox.Status.FAILED,
+                ],
                 next_retry_at__lte=timezone.now(),
             )
             .order_by("created_at")
@@ -28,7 +31,10 @@ class Command(BaseCommand):
         for item_id in candidates:
             with transaction.atomic():
                 item = LegacySyncOutbox.objects.select_for_update().get(id=item_id)
-                if item.status not in {LegacySyncOutbox.Status.PENDING, LegacySyncOutbox.Status.FAILED}:
+                if item.status not in {
+                    LegacySyncOutbox.Status.PENDING,
+                    LegacySyncOutbox.Status.FAILED,
+                }:
                     continue
                 ok = retry_outbox_item(item)
             if ok:
@@ -38,6 +44,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"legacy_sync_outbox processed={completed + failed} completed={completed} failed={failed}"
+                f"legacy_sync_outbox processed={completed + failed} "
+                f"completed={completed} failed={failed}"
             )
         )

@@ -21,7 +21,7 @@ jobs:
     name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,7 +34,7 @@ jobs:
             --junitxml=report-prod.xml \
             --cov=. --cov-report=term --cov-report=xml:coverage-prod.xml
       - name: Subir resultados
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results-prod
@@ -50,36 +50,36 @@ jobs:
     steps:
       - name: Actualizar código
         run: |
-          cd /opt/centinela/profile_identity_backend
+          cd /opt/centinela/identity-service
           git fetch origin main
           git reset --hard origin/main
 
       - name: Reconstruir contenedor
         run: |
           cd /opt/centinela
-          docker compose up -d --build --no-deps profile-identity-web
+          docker compose up -d --build --no-deps identity-service
 
       - name: Ejecutar migraciones
         run: |
           cd /opt/centinela
-          docker compose exec -T profile-identity-web python manage.py migrate --noinput
+          docker compose exec -T identity-service python manage.py migrate --noinput
 
       - name: Health check con rollback automático
         run: |
           sleep 15
           HEALTHY=false
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/api/v1/ || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/health/ || echo "000")
             echo "Intento $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "404" ]; then
+            if [ "$STATUS" = "200" ]; then
               HEALTHY=true; break
             fi
             sleep 6
           done
           if [ "$HEALTHY" = "false" ]; then
             echo "Health check fallido — rollback al commit anterior"
-            cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
-            cd /opt/centinela && docker compose up -d --build --no-deps profile-identity-web
+            cd /opt/centinela/identity-service && git reset --hard HEAD~1
+            cd /opt/centinela && docker compose up -d --build --no-deps identity-service
             exit 1
           fi
           echo "Deploy exitoso — profile_identity_backend en producción"

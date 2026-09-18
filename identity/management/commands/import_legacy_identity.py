@@ -8,10 +8,19 @@ from identity.profile_services import backfill_missing_profile_information
 
 
 class Command(BaseCommand):
-    help = "Importa un JSON exportado desde el monolito hacia el microservicio de identidad."
+    help = (
+        "Importa un JSON exportado desde el monolito hacia el microservicio "
+        "de identidad."
+    )
 
     def add_arguments(self, parser):
-        parser.add_argument("path", help="Ruta del archivo JSON con users, profiles, groups y group_memberships.")
+        parser.add_argument(
+            "path",
+            help=(
+                "Ruta del archivo JSON con users, profiles, groups y "
+                "group_memberships."
+            ),
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -46,6 +55,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Importacion idempotente completada. Perfiles vacios creados: {created_profiles}."
+                f"Importacion idempotente completada. "
+                f"Perfiles vacios creados: {created_profiles}."
             )
         )

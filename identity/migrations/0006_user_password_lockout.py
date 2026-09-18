@@ -22,6 +22,8 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="user",
-            index=models.Index(fields=["password_locked_until"], name="identity_pwd_locked_until"),
+            index=models.Index(
+                fields=["password_locked_until"], name="identity_pwd_locked_until"
+            ),
         ),
     ]

@@ -3,7 +3,11 @@ import random
 import string
 import uuid
 
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.db import models
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -47,7 +51,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         RESEARCHER = "researcher", "Researcher"
         COMPANY = "company", "Company"
 
-    id = models.CharField(max_length=10, primary_key=True, default=generate_unique_id, editable=False)
+    id = models.CharField(
+        max_length=10, primary_key=True, default=generate_unique_id, editable=False
+    )
     account_type = models.CharField(
         max_length=20,
         choices=AccountType.choices,
@@ -105,7 +111,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_password_locked(self):
-        return self.password_locked_until is not None and self.password_locked_until > timezone.now()
+        return (
+            self.password_locked_until is not None
+            and self.password_locked_until > timezone.now()
+        )
 
     def save(self, *args, **kwargs):
         if self.scopus_id == "":
@@ -117,7 +126,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = "users"
         indexes = [
-            models.Index(fields=["password_locked_until"], name="identity_pwd_locked_until"),
+            models.Index(
+                fields=["password_locked_until"], name="identity_pwd_locked_until"
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -129,12 +140,14 @@ class User(AbstractBaseUser, PermissionsMixin):
                 fields=["scopus_id"],
                 name="identity_unique_scopus_id",
                 condition=models.Q(scopus_id__isnull=False),
-            )
+            ),
         ]
 
 
 class ProfileInformation(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile_information")
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="profile_information"
+    )
     about_me = models.TextField(blank=True, null=True)
     disciplines = models.JSONField(default=list, blank=True)
     contact_info = models.JSONField(default=list, blank=True)
@@ -151,12 +164,20 @@ class Group(models.Model):
         POSITIONAL = "Positional Voting"
         NONPOSITIONAL = "Non-Positional Voting"
 
-    id = models.CharField(max_length=10, primary_key=True, default=generate_unique_id, editable=False)
+    id = models.CharField(
+        max_length=10, primary_key=True, default=generate_unique_id, editable=False
+    )
     title = models.CharField(max_length=255)
     description = models.TextField()
-    admin = models.ForeignKey(User, on_delete=models.CASCADE, related_name="administered_groups")
-    users = models.ManyToManyField(User, through="GroupMembership", related_name="member_groups")
-    voting_type = models.CharField(max_length=50, choices=VotingType.choices, default=VotingType.POSITIONAL)
+    admin = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="administered_groups"
+    )
+    users = models.ManyToManyField(
+        User, through="GroupMembership", related_name="member_groups"
+    )
+    voting_type = models.CharField(
+        max_length=50, choices=VotingType.choices, default=VotingType.POSITIONAL
+    )
 
     def __str__(self):
         return self.title
@@ -172,13 +193,17 @@ class GroupMembership(models.Model):
     class Meta:
         db_table = "group_users"
         constraints = [
-            models.UniqueConstraint(fields=["group", "user"], name="identity_unique_group_user")
+            models.UniqueConstraint(
+                fields=["group", "user"], name="identity_unique_group_user"
+            )
         ]
 
 
 class AuthSession(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_sessions")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="auth_sessions"
+    )
     refresh_jti = models.CharField(max_length=255, unique=True)
     refresh_token_hash = models.CharField(max_length=64)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -201,14 +226,18 @@ class AuthSession(models.Model):
     class Meta:
         db_table = "auth_sessions"
         indexes = [
-            models.Index(fields=["user", "revoked_at"], name="identity_session_user_revoked"),
+            models.Index(
+                fields=["user", "revoked_at"], name="identity_session_user_revoked"
+            ),
             models.Index(fields=["expires_at"], name="identity_session_expires_at"),
         ]
 
 
 class UserMFASettings(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="mfa_settings")
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="mfa_settings"
+    )
     mfa_enabled = models.BooleanField(default=False)
     mfa_secret_encrypted = models.TextField(null=True, blank=True)
     pending_mfa_secret_encrypted = models.TextField(null=True, blank=True)
@@ -241,7 +270,9 @@ class MFAChallenge(models.Model):
         ENROLLMENT = "enrollment", "Enrollment"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mfa_challenges")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="mfa_challenges"
+    )
     challenge_token_hash = models.CharField(max_length=64, unique=True)
     purpose = models.CharField(max_length=20, choices=Purpose.choices)
     expires_at = models.DateTimeField()
@@ -267,7 +298,10 @@ class MFAChallenge(models.Model):
     class Meta:
         db_table = "mfa_challenges"
         indexes = [
-            models.Index(fields=["user", "purpose", "used_at"], name="identity_mfa_challenge_user"),
+            models.Index(
+                fields=["user", "purpose", "used_at"],
+                name="identity_mfa_challenge_user",
+            ),
             models.Index(fields=["expires_at"], name="identity_mfa_challenge_exp"),
         ]
 
@@ -282,7 +316,9 @@ class LegacySyncOutbox(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     path = models.CharField(max_length=255)
     payload = models.JSONField()
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
     attempts = models.PositiveIntegerField(default=0)
     last_error = models.TextField(blank=True)
     next_retry_at = models.DateTimeField(default=timezone.now)
@@ -293,6 +329,8 @@ class LegacySyncOutbox(models.Model):
     class Meta:
         db_table = "legacy_sync_outbox"
         indexes = [
-            models.Index(fields=["status", "next_retry_at"], name="identity_outbox_status_retry"),
+            models.Index(
+                fields=["status", "next_retry_at"], name="identity_outbox_status_retry"
+            ),
             models.Index(fields=["path", "status"], name="identity_outbox_path_status"),
         ]

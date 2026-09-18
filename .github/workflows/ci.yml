@@ -19,24 +19,15 @@ env:
 
 jobs:
   branch-name:
-    name: Validar nombre de rama
-    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    steps:
-      - name: Verificar prefijo (feature/*, hotfix/*, chore/*)
-        run: |
-          BRANCH="${{ github.head_ref }}"
-          case "$BRANCH" in
-            feature/*|hotfix/*|chore/*) echo "OK: $BRANCH"; exit 0 ;;
-            *) echo "Rama '$BRANCH' no cumple convención (feature/*, hotfix/*, chore/*)"; exit 1 ;;
-          esac
+    uses: PlataformaIntegradaInvestigadores/.github/.github/workflows/branch-name.yml@main
 
   # ── Tests ──────────────────────────────────────────────────────────────────
   test:
     name: Pruebas unitarias
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -47,9 +38,9 @@ jobs:
         run: |
           pytest -v --tb=short \
             --junitxml=report.xml \
-            --cov=. --cov-report=term --cov-report=xml:coverage.xml
+            --cov=. --cov-report=term --cov-report=xml:coverage.xml --cov-fail-under=90
       - name: Subir resultados
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-results
@@ -57,44 +48,57 @@ jobs:
             report.xml
             coverage.xml
 
+  # ── Docker build ───────────────────────────────────────────────────────────
+  build-docker:
+    name: Build imagen Docker
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build imagen
+        run: docker build -t profile_identity_backend:${{ github.sha }} .
+      - name: Verificar imagen
+        run: docker images profile_identity_backend
+
   # ── Deploy staging ─────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy a servidor staging
-    runs-on: self-hosted
+    runs-on: [self-hosted, staging]
     needs: test
-    if: github.ref == 'refs/heads/staging'
+    if: github.ref == 'refs/heads/develop'
     steps:
       - name: Actualizar codigo
         run: |
-          cd /opt/centinela/profile_identity_backend
-          git fetch origin staging
-          git reset --hard origin/staging
+          cd /opt/centinela/identity-service
+          git fetch origin develop
+          git reset --hard origin/develop
 
       - name: Reconstruir contenedor
         run: |
           cd /opt/centinela
-          docker compose up -d --build --no-deps profile-identity-web
+          docker compose up -d --build --no-deps identity-service
 
       - name: Ejecutar migraciones
         run: |
           cd /opt/centinela
-          docker compose exec -T profile-identity-web python manage.py migrate --noinput
+          docker compose exec -T identity-service python manage.py migrate --noinput
 
       - name: Health check
         run: |
           sleep 15
           HEALTHY=false
           for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/api/v1/ || echo "000")
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://localhost:8002/health/ || echo "000")
             echo "Intento $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "404" ]; then
+            if [ "$STATUS" = "200" ]; then
               HEALTHY=true; break
             fi
             sleep 6
           done
           if [ "$HEALTHY" = "false" ]; then
             echo "Health check fallido — rollback"
-            cd /opt/centinela/profile_identity_backend && git reset --hard HEAD~1
-            cd /opt/centinela && docker compose up -d --build --no-deps profile-identity-web
+            cd /opt/centinela/identity-service && git reset --hard HEAD~1
+            cd /opt/centinela && docker compose up -d --build --no-deps identity-service
             exit 1
           fi

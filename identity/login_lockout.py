@@ -14,7 +14,9 @@ class PasswordFailureResult:
     locked_until: datetime | None
 
 
-def get_user_for_password_lockout(username: str | None, account_type: str) -> User | None:
+def get_user_for_password_lockout(
+    username: str | None, account_type: str
+) -> User | None:
     if not username:
         return None
     return User.objects.filter(
@@ -24,7 +26,10 @@ def get_user_for_password_lockout(username: str | None, account_type: str) -> Us
 
 
 def is_password_locked(user: User) -> bool:
-    return user.password_locked_until is not None and user.password_locked_until > timezone.now()
+    return (
+        user.password_locked_until is not None
+        and user.password_locked_until > timezone.now()
+    )
 
 
 def reset_password_failures(user: User) -> None:
@@ -45,7 +50,9 @@ def record_password_failure(user: User) -> PasswordFailureResult:
     locked_user.failed_login_attempts += 1
     lockout_minutes = _lockout_minutes_for_failures(locked_user.failed_login_attempts)
     if lockout_minutes is not None:
-        locked_user.password_locked_until = timezone.now() + timedelta(minutes=lockout_minutes)
+        locked_user.password_locked_until = timezone.now() + timedelta(
+            minutes=lockout_minutes
+        )
     locked_user.save(update_fields=["failed_login_attempts", "password_locked_until"])
     return PasswordFailureResult(
         failed_attempts=locked_user.failed_login_attempts,

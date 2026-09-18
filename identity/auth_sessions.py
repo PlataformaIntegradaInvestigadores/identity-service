@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime, timezone as datetime_timezone
+from datetime import UTC, datetime
 
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -12,7 +12,7 @@ def hash_token(raw_token: str) -> str:
 
 
 def expires_at_from_token(token: RefreshToken) -> datetime:
-    return datetime.fromtimestamp(int(token["exp"]), tz=datetime_timezone.utc)
+    return datetime.fromtimestamp(int(token["exp"]), tz=UTC)
 
 
 def create_auth_session(*, user: User, raw_refresh_token: str, request) -> AuthSession:
@@ -27,7 +27,9 @@ def create_auth_session(*, user: User, raw_refresh_token: str, request) -> AuthS
     )
 
 
-def rotate_auth_session(*, session: AuthSession, raw_refresh_token: str, request) -> AuthSession:
+def rotate_auth_session(
+    *, session: AuthSession, raw_refresh_token: str, request
+) -> AuthSession:
     refresh = RefreshToken(raw_refresh_token)
     session.refresh_jti = str(refresh["jti"])
     session.refresh_token_hash = hash_token(raw_refresh_token)
@@ -53,7 +55,9 @@ def rotate_auth_session(*, session: AuthSession, raw_refresh_token: str, request
 
 def revoke_session_for_refresh(raw_refresh_token: str) -> bool:
     refresh = RefreshToken(raw_refresh_token)
-    session = AuthSession.objects.filter(refresh_jti=str(refresh["jti"]), revoked_at__isnull=True).first()
+    session = AuthSession.objects.filter(
+        refresh_jti=str(refresh["jti"]), revoked_at__isnull=True
+    ).first()
     if not session:
         return False
     session.revoke()
