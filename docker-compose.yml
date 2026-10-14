@@ -7,6 +7,7 @@ services:
     user: root
     command: >
       sh -c "mkdir -p /app/media/profile_pictures
+      && cp /app/static_defaults/default_profile_picture.png /app/media/profile_pictures/default_profile_picture.png
       && chown -R appuser:appuser /app/media
       && exec runuser -u appuser -- gunicorn profile_identity_project.wsgi:application --bind 0.0.0.0:8002 --workers 1 --threads 2 --timeout 60"
     volumes:
