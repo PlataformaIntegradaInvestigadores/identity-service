@@ -526,6 +526,7 @@ class UserSerializer(serializers.ModelSerializer):
             "investigation_camp",
             "profile_picture",
             "email_institution",
+            "interests",
         ]
 
     def validate_website(self, value):
