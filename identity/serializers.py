@@ -70,6 +70,11 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
             token["company_id"] = user.id
         else:
             token["user_id"] = user.id
+        # Other services (e.g. social-service's consensus snapshots) only see
+        # the user through this token's claims -- without these, every
+        # downstream display name fell back to the raw email.
+        token["first_name"] = user.first_name
+        token["last_name"] = user.last_name
         return token
 
     def validate(self, attrs):
