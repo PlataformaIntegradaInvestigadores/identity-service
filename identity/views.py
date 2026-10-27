@@ -4,6 +4,7 @@ import socket
 from django.conf import settings
 from django.db import connection
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -35,6 +36,28 @@ from .domain.exceptions import (
 from .domain.policies import ensure_can_edit_user
 from .metrics import prometheus_metrics_response
 from .models import Group, ProfileInformation, User, UserMFASettings
+from .openapi_docs import (
+    BAD_REQUEST,
+    FORBIDDEN,
+    ID_PATH,
+    NOT_FOUND,
+    PROFILE_USER_ID_PATH,
+    TAG_AUTH,
+    TAG_GROUPS,
+    TAG_MFA,
+    TAG_PROFILE,
+    TAG_USERS,
+    UNAUTHENTICATED,
+    USER_ID_PATH,
+    CompanyRegisterResponseSerializer,
+    DetailSerializer,
+    LoginResponseSerializer,
+    LogoutRequestSerializer,
+    MFASetupResponseSerializer,
+    RefreshRequestSerializer,
+    RefreshResponseSerializer,
+    RegisterErrorSerializer,
+)
 from .profile_services import ensure_profile_information
 from .security_events import emit_security_event
 from .serializers import (
@@ -73,6 +96,7 @@ def _local_ip() -> str:
         return "unknown"
 
 
+@extend_schema(exclude=True)
 class HealthLiveView(APIView):
     permission_classes = [permissions.AllowAny]
     renderer_classes = [JSONRenderer]
@@ -101,6 +125,7 @@ class HealthLiveView(APIView):
         return Response(payload, status=200 if ok else 503)
 
 
+@extend_schema(exclude=True)
 class MetricsView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
@@ -109,6 +134,17 @@ class MetricsView(APIView):
         return prometheus_metrics_response()
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_USERS],
+        summary="Listar investigadores",
+        description=(
+            "Devuelve las cuentas de investigadores, sin incluir a quien hace la "
+            "petición. Sirve para buscar integrantes al armar un grupo."
+        ),
+        responses={200: UserListSerializer(many=True), 401: UNAUTHENTICATED},
+    )
+)
 class UserListView(generics.ListAPIView):
     serializer_class = UserListSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -119,6 +155,40 @@ class UserListView(generics.ListAPIView):
         )
 
 
+@extend_schema_view(
+    put=extend_schema(
+        tags=[TAG_USERS],
+        summary="Actualizar datos de un usuario",
+        description=(
+            "Edita los datos del propio usuario. La actualización es siempre "
+            "parcial: solo se modifican los campos enviados, igual que con "
+            "`PATCH`. Se envía como `multipart/form-data` para poder subir la "
+            "foto de perfil."
+        ),
+        responses={
+            200: UserSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+            404: NOT_FOUND,
+        },
+    ),
+    patch=extend_schema(
+        tags=[TAG_USERS],
+        summary="Actualizar parcialmente un usuario",
+        description=(
+            "Edita los campos enviados del propio usuario. Se envía como "
+            "`multipart/form-data` para poder subir la foto de perfil."
+        ),
+        responses={
+            200: UserSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+            404: NOT_FOUND,
+        },
+    ),
+)
 class UserUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -141,6 +211,21 @@ class UserUpdateView(generics.UpdateAPIView):
             raise_drf_domain_exception(exc)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Iniciar sesión (investigador)",
+        description=(
+            "Autentica a un investigador con correo y contraseña. Si la sesión "
+            "queda iniciada devuelve `access`, y el `refresh` viaja en una "
+            "cookie `HttpOnly`. Si la cuenta usa o debe activar MFA devuelve "
+            "`status` y un `mfa_challenge` para continuar en `/auth/mfa/`. "
+            "Las credenciales inválidas y las cuentas bloqueadas responden el "
+            "mismo error."
+        ),
+        responses={200: LoginResponseSerializer, 401: UNAUTHENTICATED},
+    )
+)
 class UserTokenObtainPairView(TokenObtainPairView):
     serializer_class = UserTokenObtainPairSerializer
     authentication_classes = []
@@ -155,10 +240,34 @@ class UserTokenObtainPairView(TokenObtainPairView):
         return response
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Iniciar sesión (empresa)",
+        description=(
+            "Igual que el inicio de sesión de investigadores, pero para cuentas "
+            "de empresa. La respuesta incluye `company_id` en lugar de `user_id`."
+        ),
+        responses={200: LoginResponseSerializer, 401: UNAUTHENTICATED},
+    )
+)
 class CompanyTokenObtainPairView(UserTokenObtainPairView):
     serializer_class = CompanyTokenObtainPairSerializer
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_MFA],
+        summary="Iniciar la activación de MFA",
+        description=(
+            "Genera el secreto TOTP y el código QR para registrar la cuenta en "
+            "una app autenticadora. Requiere el `mfa_challenge` de tipo "
+            "`mfa_enrollment_required` obtenido al iniciar sesión."
+        ),
+        request=MFASetupSerializer,
+        responses={200: MFASetupResponseSerializer, 400: BAD_REQUEST},
+    )
+)
 class MFASetupView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
@@ -189,6 +298,19 @@ class MFASetupView(APIView):
         return Response(data, status=status.HTTP_200_OK)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_MFA],
+        summary="Confirmar la activación de MFA",
+        description=(
+            "Valida el primer código de la app autenticadora, deja el MFA "
+            "activo e inicia la sesión: devuelve `access` y deja el `refresh` "
+            "en la cookie."
+        ),
+        request=MFAConfirmSerializer,
+        responses={200: LoginResponseSerializer, 400: BAD_REQUEST},
+    )
+)
 class MFAConfirmView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
@@ -214,6 +336,20 @@ class MFAConfirmView(APIView):
         )
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_MFA],
+        summary="Verificar el código MFA al iniciar sesión",
+        description=(
+            "Segundo paso del inicio de sesión para cuentas con MFA activo. "
+            "Recibe el `mfa_challenge` de `mfa_required` y el código de 6 "
+            "dígitos; devuelve `access` y deja el `refresh` en la cookie. "
+            "Varios códigos erróneos bloquean el desafío y luego la cuenta."
+        ),
+        request=MFAVerifySerializer,
+        responses={200: LoginResponseSerializer, 400: BAD_REQUEST},
+    )
+)
 class MFAVerifyView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
@@ -235,6 +371,14 @@ class MFAVerifyView(APIView):
         return issue_final_auth_response(user=result["user"], request=request)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_MFA],
+        summary="Consultar el estado de MFA",
+        description="Indica si la cuenta autenticada tiene MFA activo y desde cuándo.",
+        responses={200: MFAStatusSerializer, 401: UNAUTHENTICATED},
+    )
+)
 class MFAStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -254,6 +398,20 @@ class MFAStatusView(APIView):
         )
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Renovar el token de acceso",
+        description=(
+            "Intercambia un refresh token vigente por un nuevo `access`. Si no "
+            "va en el cuerpo se toma de la cookie `HttpOnly`. El refresh se "
+            "rota: el nuevo se entrega en la cookie y el anterior queda "
+            "revocado."
+        ),
+        request=RefreshRequestSerializer,
+        responses={200: RefreshResponseSerializer, 401: UNAUTHENTICATED},
+    )
+)
 class CustomTokenRefreshView(TokenRefreshView):
     serializer_class = SessionTokenRefreshSerializer
     authentication_classes = []
@@ -296,6 +454,18 @@ class CustomTokenRefreshView(TokenRefreshView):
         return response
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Cerrar sesión",
+        description=(
+            "Revoca la sesión y el refresh token (del cuerpo o de la cookie) y "
+            "borra la cookie. No requiere `access` válido."
+        ),
+        request=LogoutRequestSerializer,
+        responses={204: None, 400: BAD_REQUEST},
+    )
+)
 class LogoutView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
@@ -356,6 +526,7 @@ class LogoutView(APIView):
         return response
 
 
+@extend_schema(exclude=True)
 class ValidateTokenView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
@@ -486,11 +657,40 @@ def clear_refresh_cookie(response):
     )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_USERS],
+        summary="Consultar un investigador",
+        description=(
+            "Devuelve los datos de perfil de un investigador por su ID. No "
+            "requiere autenticación y solo encuentra cuentas de investigadores, "
+            "no de empresas."
+        ),
+        responses={200: UserSerializer, 404: NOT_FOUND},
+    )
+)
 class UserDetailView(generics.RetrieveAPIView):
     queryset = User.objects.filter(account_type=User.AccountType.RESEARCHER)
     serializer_class = UserSerializer
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Registrar un investigador",
+        description=(
+            "Crea una cuenta de investigador. La contraseña pasa las "
+            "validaciones de seguridad de Django y el correo debe ser único."
+        ),
+        responses={
+            201: RegisterSerializer,
+            400: OpenApiResponse(
+                RegisterErrorSerializer,
+                description="Datos inválidos; los errores vienen por campo.",
+            ),
+        },
+    )
+)
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
@@ -534,6 +734,17 @@ class RegisterView(generics.CreateAPIView):
             )
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_AUTH],
+        summary="Registrar una empresa",
+        description=(
+            "Crea una cuenta de empresa con su perfil. `confirm_password` debe "
+            "coincidir con `password`."
+        ),
+        responses={201: CompanyRegisterResponseSerializer, 400: BAD_REQUEST},
+    )
+)
 class CompanyRegisterView(generics.CreateAPIView):
     serializer_class = CompanyRegisterSerializer
     permission_classes = [permissions.AllowAny]
@@ -555,6 +766,54 @@ class CompanyRegisterView(generics.CreateAPIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_PROFILE],
+        operation_id="profile_information_me_retrieve",
+        summary="Consultar mi perfil",
+        description=(
+            "Devuelve la información de perfil de la cuenta autenticada. Si "
+            "aún no existe se crea vacía."
+        ),
+        responses={200: ProfileInformationSerializer, 401: UNAUTHENTICATED},
+    ),
+    put=extend_schema(
+        tags=[TAG_PROFILE],
+        summary="Reemplazar mi perfil",
+        description="Reemplaza la información de perfil de la cuenta autenticada.",
+        responses={
+            200: ProfileInformationSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+        },
+    ),
+    patch=extend_schema(
+        tags=[TAG_PROFILE],
+        summary="Actualizar mi perfil",
+        description="Modifica solo los campos enviados del perfil.",
+        responses={
+            200: ProfileInformationSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+        },
+    ),
+    delete=extend_schema(
+        tags=[TAG_PROFILE],
+        summary="Eliminar mi perfil",
+        description=(
+            "Borra la información de perfil de la cuenta autenticada. Solo es "
+            "posible si todos sus campos están vacíos; si no, responde `400`."
+        ),
+        responses={
+            204: None,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+        },
+    ),
+)
 class ProfileInformationDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ProfileInformation.objects.all()
     serializer_class = ProfileInformationSerializer
@@ -576,6 +835,18 @@ class ProfileInformationDetailView(generics.RetrieveUpdateDestroyAPIView):
             raise_drf_domain_exception(exc)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_PROFILE],
+        operation_id="profile_information_user_retrieve",
+        summary="Consultar el perfil de un usuario",
+        description=(
+            "Devuelve la información de perfil pública de un usuario por su ID."
+        ),
+        parameters=[PROFILE_USER_ID_PATH],
+        responses={200: ProfileInformationSerializer, 404: NOT_FOUND},
+    )
+)
 class PublicProfileInformationDetailView(generics.RetrieveAPIView):
     queryset = ProfileInformation.objects.all()
     serializer_class = ProfileInformationSerializer
@@ -587,12 +858,39 @@ class PublicProfileInformationDetailView(generics.RetrieveAPIView):
         return ensure_profile_information(user)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Listar grupos",
+        description="Devuelve todos los grupos de investigación.",
+        responses={200: GroupSerializer(many=True), 401: UNAUTHENTICATED},
+    ),
+    post=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Crear un grupo",
+        description=(
+            "Crea un grupo cuyo administrador es la cuenta autenticada. "
+            "`users` es la lista de IDs de investigadores que lo integran."
+        ),
+        responses={201: GroupSerializer, 400: BAD_REQUEST, 401: UNAUTHENTICATED},
+    ),
+)
 class GroupListCreateView(generics.ListCreateAPIView):
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Listar mis grupos",
+        description=(
+            "Devuelve los grupos de los que forma parte la cuenta autenticada."
+        ),
+        responses={200: UserGroupSerializer(many=True), 401: UNAUTHENTICATED},
+    )
+)
 class UserGroupsListView(generics.ListAPIView):
     serializer_class = UserGroupSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -601,6 +899,20 @@ class UserGroupsListView(generics.ListAPIView):
         return Group.objects.filter(users=self.request.user)
 
 
+@extend_schema_view(
+    delete=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Eliminar un grupo",
+        description="Elimina el grupo. Solo puede hacerlo su administrador.",
+        responses={
+            204: None,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+            404: NOT_FOUND,
+        },
+    )
+)
 class GroupDeleteView(generics.DestroyAPIView):
     queryset = Group.objects.all()
     serializer_class = GroupSerializer
@@ -615,6 +927,23 @@ class GroupDeleteView(generics.DestroyAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@extend_schema_view(
+    post=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Salir de un grupo",
+        description=(
+            "La cuenta autenticada deja el grupo indicado. El administrador no "
+            "puede salir: debe eliminar el grupo."
+        ),
+        request=None,
+        responses={
+            200: DetailSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            404: NOT_FOUND,
+        },
+    )
+)
 class GroupLeaveView(generics.GenericAPIView):
     queryset = Group.objects.all()
     permission_classes = [permissions.IsAuthenticated]
@@ -630,12 +959,39 @@ class GroupLeaveView(generics.GenericAPIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Consultar un integrante de grupo",
+        description=(
+            "Devuelve nombre y correo de un investigador, para mostrarlo como "
+            "integrante de un grupo."
+        ),
+        responses={200: UserListSerializer, 401: UNAUTHENTICATED, 404: NOT_FOUND},
+    )
+)
 class UserDetailViewtoGroup(generics.RetrieveAPIView):
     queryset = User.objects.filter(account_type=User.AccountType.RESEARCHER)
     serializer_class = UserListSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Consultar un grupo",
+        description=(
+            "Devuelve el grupo con los datos de sus integrantes. Solo pueden "
+            "verlo quienes forman parte de él."
+        ),
+        responses={
+            200: GroupDetailSerializer,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+            404: NOT_FOUND,
+        },
+    )
+)
 class GroupDetailView(generics.RetrieveAPIView):
     queryset = Group.objects.all()
     serializer_class = GroupDetailSerializer
@@ -650,6 +1006,24 @@ class GroupDetailView(generics.RetrieveAPIView):
         return Response(self.get_serializer(group).data)
 
 
+@extend_schema_view(
+    delete=extend_schema(
+        tags=[TAG_GROUPS],
+        summary="Quitar a un integrante",
+        description=(
+            "El administrador del grupo expulsa a un integrante. No puede "
+            "quitarse a sí mismo."
+        ),
+        parameters=[ID_PATH, USER_ID_PATH],
+        responses={
+            200: DetailSerializer,
+            400: BAD_REQUEST,
+            401: UNAUTHENTICATED,
+            403: FORBIDDEN,
+            404: NOT_FOUND,
+        },
+    )
+)
 class RemoveMemberView(generics.GenericAPIView):
     queryset = Group.objects.all()
     permission_classes = [permissions.IsAuthenticated]

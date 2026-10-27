@@ -4,6 +4,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from identity.openapi_texts import SPECTACULAR_DESCRIPTION, SPECTACULAR_TAGS
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -147,9 +149,10 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Identity API",
-    "DESCRIPTION": "Usuarios, perfiles, grupos, JWT y MFA",
+    "TITLE": "Identity API: identidad y autenticación",
+    "DESCRIPTION": SPECTACULAR_DESCRIPTION,
     "VERSION": "1.0.0",
+    "TAGS": SPECTACULAR_TAGS,
     "SERVE_INCLUDE_SCHEMA": False,
     # Recorta el prefijo interno del spec y lo reemplaza por la ruta publica
     # detras del gateway (nginx.conf: /api/identity/ -> /api/), para que
