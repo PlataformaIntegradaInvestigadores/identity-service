@@ -22,7 +22,7 @@ class TestUserUpdateViewInterests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
 
     def test_actualiza_interests(self):
-        response = self.client.patch(
+        response = self.client.put(
             f"/api/users/{self.user.id}/update/",
             {"interests": "machine learning, nlp"},
             format="multipart",
@@ -30,3 +30,11 @@ class TestUserUpdateViewInterests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertEqual(self.user.interests, "machine learning, nlp")
+
+    def test_patch_is_not_allowed(self):
+        response = self.client.patch(
+            f"/api/users/{self.user.id}/update/",
+            {"interests": "nlp"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)

@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers, status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.exceptions import TokenError
@@ -55,6 +56,12 @@ class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "first_name", "last_name", "username"]
+        extra_kwargs = {
+            "id": {"help_text": "Identificador del usuario."},
+            "first_name": {"help_text": "Nombres."},
+            "last_name": {"help_text": "Apellidos."},
+            "username": {"help_text": "Correo electrónico de la cuenta."},
+        }
 
 
 class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -215,7 +222,11 @@ class CompanyTokenObtainPairSerializer(UserTokenObtainPairSerializer):
 
 
 class MFASetupSerializer(serializers.Serializer):
-    mfa_challenge = serializers.CharField(write_only=True, trim_whitespace=True)
+    mfa_challenge = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+        help_text="Token de un solo uso recibido al iniciar sesión.",
+    )
 
     def save(self, **kwargs):
         request = self.context.get("request")
@@ -242,8 +253,16 @@ class MFASetupSerializer(serializers.Serializer):
 
 
 class MFAConfirmSerializer(serializers.Serializer):
-    mfa_challenge = serializers.CharField(write_only=True, trim_whitespace=True)
-    code = serializers.CharField(write_only=True, trim_whitespace=True)
+    mfa_challenge = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+        help_text="Token de un solo uso recibido al iniciar sesión.",
+    )
+    code = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+        help_text="Código de 6 dígitos de la app autenticadora.",
+    )
 
     def validate(self, attrs):
         attrs["code"] = _normalize_totp_code_or_error(attrs.get("code"))
@@ -333,8 +352,16 @@ class MFAConfirmSerializer(serializers.Serializer):
 
 
 class MFAVerifySerializer(serializers.Serializer):
-    mfa_challenge = serializers.CharField(write_only=True, trim_whitespace=True)
-    code = serializers.CharField(write_only=True, trim_whitespace=True)
+    mfa_challenge = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+        help_text="Token de un solo uso recibido al iniciar sesión.",
+    )
+    code = serializers.CharField(
+        write_only=True,
+        trim_whitespace=True,
+        help_text="Código de 6 dígitos de la app autenticadora.",
+    )
 
     def validate(self, attrs):
         attrs["code"] = _normalize_totp_code_or_error(attrs.get("code"))
@@ -428,6 +455,12 @@ class MFAStatusSerializer(serializers.ModelSerializer):
         model = UserMFASettings
         fields = ["mfa_enabled", "mfa_confirmed_at"]
         read_only_fields = fields
+        extra_kwargs = {
+            "mfa_enabled": {"help_text": "Si la cuenta tiene MFA activo."},
+            "mfa_confirmed_at": {
+                "help_text": "Fecha en que se confirmó el MFA; nula si no está activo."
+            },
+        }
 
 
 def _get_locked_mfa_challenge(
@@ -518,7 +551,11 @@ class RelativeImageField(serializers.ImageField):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    profile_picture = RelativeImageField(required=False, allow_null=True)
+    profile_picture = RelativeImageField(
+        required=False,
+        allow_null=True,
+        help_text="Foto de perfil; en las respuestas es la ruta relativa de la imagen.",
+    )
 
     class Meta:
         model = User
@@ -533,6 +570,18 @@ class UserSerializer(serializers.ModelSerializer):
             "email_institution",
             "interests",
         ]
+        extra_kwargs = {
+            "first_name": {"help_text": "Nombres."},
+            "last_name": {"help_text": "Apellidos."},
+            "scopus_id": {"help_text": "ID de autor en Scopus."},
+            "institution": {"help_text": "Institución a la que pertenece."},
+            "website": {
+                "help_text": "Sitio web personal; se antepone `http://` si falta."
+            },
+            "investigation_camp": {"help_text": "Campo de investigación."},
+            "email_institution": {"help_text": "Correo institucional."},
+            "interests": {"help_text": "Intereses de investigación, en texto libre."},
+        }
 
     def validate_website(self, value):
         if value and not value.startswith(("http://", "https://")):
@@ -546,7 +595,9 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
-    profile_picture = RelativeImageField(read_only=True)
+    profile_picture = RelativeImageField(
+        read_only=True, help_text="Ruta relativa de la foto de perfil."
+    )
 
     class Meta:
         model = User
@@ -564,14 +615,36 @@ class UserDetailSerializer(serializers.ModelSerializer):
             "is_active",
             "is_staff",
         ]
+        extra_kwargs = {
+            "id": {"help_text": "Identificador del usuario."},
+            "first_name": {"help_text": "Nombres."},
+            "last_name": {"help_text": "Apellidos."},
+            "username": {"help_text": "Correo electrónico de la cuenta."},
+            "scopus_id": {"help_text": "ID de autor en Scopus."},
+            "investigation_camp": {"help_text": "Campo de investigación."},
+            "institution": {"help_text": "Institución a la que pertenece."},
+            "email_institution": {"help_text": "Correo institucional."},
+            "website": {"help_text": "Sitio web personal."},
+            "is_active": {"help_text": "Si la cuenta está activa."},
+            "is_staff": {"help_text": "Si la cuenta es de personal administrativo."},
+        }
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(
+        write_only=True,
+        help_text="Contraseña; debe pasar las validaciones de seguridad de Django.",
+    )
 
     class Meta:
         model = User
         fields = ["first_name", "last_name", "username", "scopus_id", "password"]
+        extra_kwargs = {
+            "first_name": {"help_text": "Nombres."},
+            "last_name": {"help_text": "Apellidos."},
+            "username": {"help_text": "Correo electrónico; debe ser único."},
+            "scopus_id": {"help_text": "ID de autor en Scopus (opcional)."},
+        }
 
     def validate(self, attrs):
         user = User(
@@ -602,24 +675,55 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class CompanyRegisterSerializer(serializers.Serializer):
-    company_name = serializers.CharField(max_length=200)
-    username = serializers.EmailField()
-    password = serializers.CharField(write_only=True, min_length=8)
-    confirm_password = serializers.CharField(write_only=True)
-    industry = serializers.CharField(max_length=20, default="other")
-    description = serializers.CharField(
-        max_length=1000, required=False, allow_blank=True, allow_null=True
+    company_name = serializers.CharField(
+        max_length=200, help_text="Nombre de la empresa."
     )
-    website = serializers.URLField(required=False, allow_blank=True, allow_null=True)
+    username = serializers.EmailField(help_text="Correo con el que iniciará sesión.")
+    password = serializers.CharField(
+        write_only=True, min_length=8, help_text="Contraseña (mínimo 8 caracteres)."
+    )
+    confirm_password = serializers.CharField(
+        write_only=True, help_text="Debe coincidir con `password`."
+    )
+    industry = serializers.CharField(
+        max_length=20, default="other", help_text="Sector de la empresa."
+    )
+    description = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Descripción de la empresa.",
+    )
+    website = serializers.URLField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Sitio web de la empresa.",
+    )
     phone = serializers.CharField(
-        max_length=20, required=False, allow_blank=True, allow_null=True
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Teléfono de contacto.",
     )
     address = serializers.CharField(
-        max_length=300, required=False, allow_blank=True, allow_null=True
+        max_length=300,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Dirección.",
     )
-    founded_year = serializers.IntegerField(required=False, allow_null=True)
+    founded_year = serializers.IntegerField(
+        required=False, allow_null=True, help_text="Año de fundación."
+    )
     employee_count = serializers.CharField(
-        max_length=20, required=False, allow_blank=True, allow_null=True
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text="Rango de empleados (por ejemplo, `11-50`).",
     )
 
     def validate_company_name(self, value):
@@ -679,10 +783,46 @@ def _principal_response_data(user):
     return {"user_id": user.id, "user_type": "user"}
 
 
+@extend_schema_field(
+    {
+        "type": "array",
+        "items": {"type": "string"},
+        "example": ["Inteligencia artificial", "Bioinformática"],
+    }
+)
+class DisciplinesField(serializers.JSONField):
+    """Lista de disciplinas; solo cambia cómo se documenta el campo."""
+
+
+@extend_schema_field(
+    {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "example": "phone"},
+                "value": {"type": "string", "example": "+593 99 999 9999"},
+            },
+        },
+    }
+)
+class ContactInfoField(serializers.JSONField):
+    """Lista de medios de contacto `{type, value}`; solo cambia la documentación."""
+
+
 class ProfileInformationSerializer(serializers.ModelSerializer):
+    disciplines = DisciplinesField(
+        required=False, help_text="Disciplinas o áreas de especialidad."
+    )
+    contact_info = ContactInfoField(
+        required=False,
+        help_text="Medios de contacto; cada uno tiene `type` y `value`.",
+    )
+
     class Meta:
         model = ProfileInformation
         fields = ["about_me", "disciplines", "contact_info"]
+        extra_kwargs = {"about_me": {"help_text": "Presentación personal."}}
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -707,11 +847,20 @@ class GroupSerializer(serializers.ModelSerializer):
         queryset=User.objects.filter(account_type=User.AccountType.RESEARCHER),
         many=True,
         required=False,
+        help_text="IDs de los investigadores que integran el grupo.",
     )
 
     class Meta:
         model = Group
         fields = ["id", "title", "description", "admin_id", "users", "voting_type"]
+        extra_kwargs = {
+            "id": {"help_text": "Identificador del grupo."},
+            "title": {"help_text": "Nombre del grupo."},
+            "description": {"help_text": "Descripción del grupo."},
+            "admin_id": {"help_text": "ID del administrador del grupo."},
+            "users": {"help_text": "IDs de los integrantes del grupo."},
+            "voting_type": {"help_text": "Modalidad de votación del grupo."},
+        }
         read_only_fields = ["id", "admin"]
 
     def create(self, validated_data):
@@ -723,6 +872,14 @@ class UserGroupSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
         fields = ["id", "title", "description", "admin_id", "users", "voting_type"]
+        extra_kwargs = {
+            "id": {"help_text": "Identificador del grupo."},
+            "title": {"help_text": "Nombre del grupo."},
+            "description": {"help_text": "Descripción del grupo."},
+            "admin_id": {"help_text": "ID del administrador del grupo."},
+            "users": {"help_text": "IDs de los integrantes del grupo."},
+            "voting_type": {"help_text": "Modalidad de votación del grupo."},
+        }
         read_only_fields = [
             "id",
             "title",
@@ -734,9 +891,19 @@ class UserGroupSerializer(serializers.ModelSerializer):
 
 
 class GroupDetailSerializer(serializers.ModelSerializer):
-    users = UserDetailSerializer(many=True, read_only=True)
+    users = UserDetailSerializer(
+        many=True, read_only=True, help_text="Integrantes del grupo."
+    )
 
     class Meta:
         model = Group
         fields = ["id", "title", "description", "admin_id", "users", "voting_type"]
+        extra_kwargs = {
+            "id": {"help_text": "Identificador del grupo."},
+            "title": {"help_text": "Nombre del grupo."},
+            "description": {"help_text": "Descripción del grupo."},
+            "admin_id": {"help_text": "ID del administrador del grupo."},
+            "users": {"help_text": "IDs de los integrantes del grupo."},
+            "voting_type": {"help_text": "Modalidad de votación del grupo."},
+        }
         read_only_fields = ["id", "admin_id"]

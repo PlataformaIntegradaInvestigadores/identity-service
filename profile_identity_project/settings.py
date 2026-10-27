@@ -153,6 +153,11 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": SPECTACULAR_DESCRIPTION,
     "VERSION": "1.0.0",
     "TAGS": SPECTACULAR_TAGS,
+    "ENUM_GENERATE_CHOICE_DESCRIPTION": False,
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "identity.openapi_docs.polish_schema",
+    ],
     "SERVE_INCLUDE_SCHEMA": False,
     # Recorta el prefijo interno del spec y lo reemplaza por la ruta publica
     # detras del gateway (nginx.conf: /api/identity/ -> /api/), para que

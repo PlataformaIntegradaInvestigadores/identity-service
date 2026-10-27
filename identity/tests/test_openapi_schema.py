@@ -62,3 +62,43 @@ class OpenAPIDocumentationTests(SimpleTestCase):
     def test_operation_ids_are_unique(self):
         ids = [op["operationId"] for _, _, op in self.operations()]
         self.assertEqual(len(ids), len(set(ids)))
+
+    def test_every_response_has_a_description(self):
+        for path, method, operation in self.operations():
+            for status_code, response in operation["responses"].items():
+                label = f"{method.upper()} {path} {status_code}"
+                self.assertTrue(response.get("description"), label)
+                self.assertNotEqual(response["description"], "No response body", label)
+
+    def test_every_schema_property_has_a_description(self):
+        for name, definition in self.schema["components"]["schemas"].items():
+            for prop, spec in definition.get("properties", {}).items():
+                described = spec.get("description") or any(
+                    "description" in part for part in spec.get("allOf", [])
+                )
+                self.assertTrue(described, f"{name}.{prop} sin descripción")
+
+    def test_no_enum_choice_descriptions_in_english(self):
+        for name, definition in self.schema["components"]["schemas"].items():
+            self.assertNotIn("* `", definition.get("description", ""), name)
+
+    def test_path_parameters_are_described(self):
+        for path, method, operation in self.operations():
+            for parameter in operation.get("parameters", []):
+                label = f"{method.upper()} {path} {parameter['name']}"
+                self.assertTrue(parameter.get("description"), label)
+
+    def test_duplicated_patch_operations_are_not_published(self):
+        paths = self.schema["paths"]
+        self.assertNotIn("patch", paths["/users/{id}/update/"])
+        self.assertNotIn("patch", paths["/profile-information/"])
+
+    def test_request_bodies_list_one_format(self):
+        for path, method, operation in self.operations():
+            content = operation.get("requestBody", {}).get("content", {})
+            self.assertLessEqual(len(content), 1, f"{method.upper()} {path}")
+
+    def test_login_documents_both_outcomes(self):
+        schemas = self.schema["components"]["schemas"]
+        one_of = schemas["LoginResult"]["oneOf"]
+        self.assertEqual(len(one_of), 2)
