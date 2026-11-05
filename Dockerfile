@@ -21,4 +21,9 @@ USER appuser
 
 EXPOSE 8002
 
+# /health/ checks the database and answers 503 when it is unreachable. Keep the
+# trailing slash: /health redirects (301) to it.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health/', timeout=5)"
+
 CMD ["gunicorn", "profile_identity_project.wsgi:application", "--bind", "0.0.0.0:8002", "--workers", "1", "--threads", "2", "--timeout", "60"]
