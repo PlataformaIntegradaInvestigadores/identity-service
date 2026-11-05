@@ -65,3 +65,12 @@ class TestMediaServing(TestCase):
         response = self.client.get("/media/profile_pictures/../../manage.py")
 
         self.assertIn(response.status_code, (301, 400, 404))
+
+    @override_settings(DEBUG=False)
+    def test_dot_dot_cannot_escape_into_other_media_directories(self):
+        self._make(settings.MEDIA_ROOT / "private", "zz-secret.png", b"PNG-x")
+
+        response = self.client.get("/media/profile_pictures/../private/zz-secret.png")
+
+        # safe_join rejects the escape (400); it must never be served (200).
+        self.assertIn(response.status_code, (400, 404))
