@@ -1,7 +1,7 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from drf_spectacular.views import SpectacularAPIView
 
 from identity.views import MetricsView, ValidateTokenView
@@ -19,5 +19,13 @@ urlpatterns = [
     path("health/", include("identity.health_urls")),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Profile pictures are served by the app itself (the gateway proxies /media/
+# here). This must not depend on DEBUG, otherwise turning DEBUG off in staging
+# silently breaks every uploaded picture.
+urlpatterns += [
+    re_path(
+        r"^media/(?P<path>.*)$",
+        serve,
+        {"document_root": settings.MEDIA_ROOT},
+    ),
+]
