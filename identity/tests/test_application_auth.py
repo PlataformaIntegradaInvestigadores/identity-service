@@ -141,7 +141,12 @@ class TestAuthenticateCredentials(TestCase):
             self.login()
 
 
-@override_settings(MFA_LOCKOUT_FAILURE_THRESHOLD=2, MFA_LOCKOUT_MINUTES=[5])
+@override_settings(
+    MFA_LOCKOUT_FAILURE_THRESHOLD=2,
+    MFA_LOCKOUT_MINUTES=[5],
+    # Must differ from SECRET_KEY: tests run with DEBUG off, which forbids sharing.
+    MFA_SECRET_ENCRYPTION_KEY="test-mfa-secret-key",
+)
 class TestMFAUseCases(TestCase):
     def setUp(self):
         self.user = make_user()
