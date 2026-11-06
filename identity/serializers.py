@@ -1,11 +1,8 @@
-from django.conf import settings
-from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field
-from rest_framework import serializers, status
+from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import (
@@ -13,43 +10,27 @@ from rest_framework_simplejwt.serializers import (
     TokenRefreshSerializer,
 )
 
+from .application.authentication import MFAStep, authenticate_credentials
+from .application.mfa import (
+    MFAChallengeRejected,
+    begin_enrollment,
+    confirm_enrollment,
+    verify_login_code,
+)
+from .application.tokens import build_refresh_token, issue_session
 from .application.use_cases import (
     create_group,
     create_profile_information,
+    register_company,
     register_user,
     update_profile_information,
     update_user,
 )
-from .auth_sessions import (
-    create_auth_session,
-    get_active_session_for_refresh,
-    rotate_auth_session,
-)
-from .company_profiles import provision_company_profile
-from .login_lockout import (
-    get_user_for_password_lockout,
-    is_password_locked,
-    record_password_failure,
-    reset_password_failures,
-)
-from .mfa_services import (
-    GENERIC_MFA_ERROR,
-    MFALockedError,
-    MFAServiceError,
-    activate_pending_mfa_secret,
-    create_mfa_challenge,
-    create_pending_enrollment_secret,
-    get_active_totp_secret,
-    get_pending_totp_secret,
-    hash_challenge_token,
-    mark_challenge_used,
-    record_mfa_failure,
-    record_mfa_success,
-    validate_totp_code,
-)
-from .models import Group, MFAChallenge, ProfileInformation, User, UserMFASettings
+from .auth_sessions import get_active_session_for_refresh, rotate_auth_session
+from .domain.exceptions import AuthenticationRejected
+from .mfa_services import GENERIC_MFA_ERROR
+from .models import Group, ProfileInformation, User, UserMFASettings
 from .profile_services import normalize_contact_info
-from .security_events import emit_security_event
 
 
 class UserListSerializer(serializers.ModelSerializer):
@@ -69,152 +50,30 @@ class UserTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     @classmethod
     def get_token(cls, user):
-        token = super().get_token(user)
-        token["user_type"] = (
-            "company" if user.account_type == User.AccountType.COMPANY else "user"
-        )
-        if user.account_type == User.AccountType.COMPANY:
-            token["company_id"] = user.id
-        else:
-            token["user_id"] = user.id
-        # Other services (e.g. social-service's consensus snapshots) only see
-        # the user through this token's claims -- without these, every
-        # downstream display name fell back to the raw email.
-        token["first_name"] = user.first_name
-        token["last_name"] = user.last_name
-        return token
+        return build_refresh_token(user)
 
     def validate(self, attrs):
         request = self.context.get("request")
-        username = attrs.get(self.username_field)
-        password = attrs.get("password")
-        candidate_user = get_user_for_password_lockout(
-            username, self.expected_account_type
-        )
-        if candidate_user is not None and is_password_locked(candidate_user):
-            emit_security_event(
-                event_type="account_locked",
-                severity="warning",
-                outcome="blocked",
+        try:
+            step = authenticate_credentials(
+                username=attrs.get(self.username_field),
+                password=attrs.get("password"),
+                account_type=self.expected_account_type,
                 request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                user=candidate_user,
-                reason="password_lockout",
             )
-            raise AuthenticationFailed(GENERIC_MFA_ERROR, code="authorization")
+        except AuthenticationRejected as exc:
+            raise AuthenticationFailed(str(exc), code="authorization") from exc
 
-        self.user = authenticate(
-            request=request,
-            **{
-                self.username_field: username,
-                "password": password,
-                "account_type": self.expected_account_type,
-            },
-        )
-        if (
-            self.user is None
-            or not self.user.is_active
-            or self.user.account_type != self.expected_account_type
-        ):
-            failure = None
-            if (
-                self.user is None
-                and candidate_user is not None
-                and candidate_user.is_active
-            ):
-                failure = record_password_failure(candidate_user)
-            emit_security_event(
-                event_type="login_failed",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                reason="invalid_credentials",
-                username=username,
-                failed_attempts=failure.failed_attempts if failure else None,
-            )
-            if failure and failure.locked_until is not None:
-                emit_security_event(
-                    event_type="account_locked",
-                    severity="warning",
-                    outcome="blocked",
-                    request=request,
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    user=candidate_user,
-                    reason="password_lockout_threshold",
-                )
-            raise AuthenticationFailed(GENERIC_MFA_ERROR, code="authorization")
-
-        reset_password_failures(self.user)
-        mfa_settings, _ = UserMFASettings.objects.get_or_create(user=self.user)
-        if mfa_settings.is_locked:
-            emit_security_event(
-                event_type="account_locked",
-                severity="warning",
-                outcome="blocked",
-                request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                user=self.user,
-                reason="mfa_locked",
-            )
-            raise AuthenticationFailed(GENERIC_MFA_ERROR, code="authorization")
-
-        if mfa_settings.mfa_enabled:
-            challenge = create_mfa_challenge(
-                user=self.user,
-                purpose=MFAChallenge.Purpose.LOGIN,
-                request=request,
-            )
-            emit_security_event(
-                event_type="mfa_required",
-                severity="info",
-                outcome="pending",
-                request=request,
-                status_code=status.HTTP_200_OK,
-                user=self.user,
-            )
+        if isinstance(step, MFAStep):
             return {
-                "status": "mfa_required",
-                "mfa_challenge": challenge.token,
-                "expires_in": challenge.expires_in,
+                "status": step.status,
+                "mfa_challenge": step.challenge_token,
+                "expires_in": step.expires_in,
             }
 
-        enforcement_mode = settings.MFA_ENFORCEMENT_MODE
-        if enforcement_mode in {"enrollment_required", "required"}:
-            challenge = create_mfa_challenge(
-                user=self.user,
-                purpose=MFAChallenge.Purpose.ENROLLMENT,
-                request=request,
-            )
-            emit_security_event(
-                event_type="mfa_enrollment_required",
-                severity="info",
-                outcome="pending",
-                request=request,
-                status_code=status.HTTP_200_OK,
-                user=self.user,
-            )
-            return {
-                "status": "mfa_enrollment_required",
-                "mfa_challenge": challenge.token,
-                "expires_in": challenge.expires_in,
-            }
-
-        refresh = self.get_token(self.user)
-        data = {"refresh": str(refresh), "access": str(refresh.access_token)}
-        data.update(_principal_response_data(self.user))
-        create_auth_session(
-            user=self.user, raw_refresh_token=data["refresh"], request=request
-        )
-        emit_security_event(
-            event_type="login_success",
-            severity="info",
-            outcome="success",
-            request=request,
-            status_code=status.HTTP_200_OK,
-            user=self.user,
-        )
-        return data
+        self.user = step.user
+        issued = issue_session(user=self.user, request=request, mfa_verified=False)
+        return {"refresh": issued.refresh, "access": issued.access, **issued.principal}
 
 
 class CompanyTokenObtainPairSerializer(UserTokenObtainPairSerializer):
@@ -229,30 +88,22 @@ class MFASetupSerializer(serializers.Serializer):
     )
 
     def save(self, **kwargs):
-        request = self.context.get("request")
-        with transaction.atomic():
-            challenge = _get_locked_mfa_challenge(
-                self.validated_data["mfa_challenge"],
-                MFAChallenge.Purpose.ENROLLMENT,
-                request=request,
+        try:
+            started = begin_enrollment(
+                raw_challenge=self.validated_data["mfa_challenge"],
+                request=self.context.get("request"),
             )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
-                user=challenge.user
-            )
-            if mfa_settings.mfa_enabled:
-                _raise_mfa_validation_error()
-
-            enrollment_secret = create_pending_enrollment_secret(challenge.user)
-            self.user = challenge.user
-            self.challenge = challenge
-            return {
-                "otpauth_uri": enrollment_secret.otpauth_uri,
-                "manual_key": enrollment_secret.secret,
-                "qr_code": enrollment_secret.qr_data_uri,
-            }
+        except MFAChallengeRejected as exc:
+            raise _mfa_validation_error(exc) from exc
+        self.user = started.user
+        return {
+            "otpauth_uri": started.secret.otpauth_uri,
+            "manual_key": started.secret.secret,
+            "qr_code": started.secret.qr_data_uri,
+        }
 
 
-class MFAConfirmSerializer(serializers.Serializer):
+class _MFACodeSerializer(serializers.Serializer):
     mfa_challenge = serializers.CharField(
         write_only=True,
         trim_whitespace=True,
@@ -268,186 +119,27 @@ class MFAConfirmSerializer(serializers.Serializer):
         attrs["code"] = _normalize_totp_code_or_error(attrs.get("code"))
         return attrs
 
+    def check_code(self, use_case):
+        try:
+            self.user = use_case(
+                raw_challenge=self.validated_data["mfa_challenge"],
+                code=self.validated_data["code"],
+                request=self.context.get("request"),
+            )
+        except MFAChallengeRejected as exc:
+            raise _mfa_validation_error(exc) from exc
+        return self.user
+
+
+class MFAConfirmSerializer(_MFACodeSerializer):
     def save(self, **kwargs):
-        request = self.context.get("request")
-        should_raise_failure = False
-        with transaction.atomic():
-            challenge = _get_locked_mfa_challenge(
-                self.validated_data["mfa_challenge"],
-                MFAChallenge.Purpose.ENROLLMENT,
-                request=request,
-            )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
-                user=challenge.user
-            )
-
-            try:
-                pending_secret = get_pending_totp_secret(mfa_settings)
-                validation = validate_totp_code(
-                    mfa_settings=mfa_settings,
-                    code=self.validated_data["code"],
-                    secret=pending_secret,
-                    prevent_reuse=True,
-                )
-            except MFALockedError:
-                emit_security_event(
-                    event_type="account_locked",
-                    severity="warning",
-                    outcome="blocked",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="mfa_locked",
-                )
-                _raise_mfa_validation_error()
-            except MFAServiceError:
-                emit_security_event(
-                    event_type="mfa_failed",
-                    severity="warning",
-                    outcome="failure",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="mfa_secret_error",
-                )
-                _raise_mfa_validation_error()
-
-            if not validation.valid:
-                failure = record_mfa_failure(
-                    mfa_settings=mfa_settings, challenge=challenge
-                )
-                emit_security_event(
-                    event_type="mfa_failed",
-                    severity="warning",
-                    outcome="failure",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="invalid_totp",
-                    failed_attempts=failure.failed_attempts,
-                    challenge_failed_attempts=failure.challenge_failed_attempts,
-                )
-                if failure.locked_until is not None:
-                    emit_security_event(
-                        event_type="account_locked",
-                        severity="warning",
-                        outcome="blocked",
-                        request=request,
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        user=challenge.user,
-                        reason="mfa_lockout_threshold",
-                    )
-                should_raise_failure = True
-            else:
-                activate_pending_mfa_secret(
-                    mfa_settings=mfa_settings, timestep=validation.timestep
-                )
-                mark_challenge_used(challenge)
-                self.user = challenge.user
-                self.challenge = challenge
-
-        if should_raise_failure:
-            _raise_mfa_validation_error()
-        return {"detail": "MFA enabled successfully", "user": self.user}
+        user = self.check_code(confirm_enrollment)
+        return {"detail": "MFA enabled successfully", "user": user}
 
 
-class MFAVerifySerializer(serializers.Serializer):
-    mfa_challenge = serializers.CharField(
-        write_only=True,
-        trim_whitespace=True,
-        help_text="Token de un solo uso recibido al iniciar sesión.",
-    )
-    code = serializers.CharField(
-        write_only=True,
-        trim_whitespace=True,
-        help_text="Código de 6 dígitos de la app autenticadora.",
-    )
-
-    def validate(self, attrs):
-        attrs["code"] = _normalize_totp_code_or_error(attrs.get("code"))
-        return attrs
-
+class MFAVerifySerializer(_MFACodeSerializer):
     def save(self, **kwargs):
-        request = self.context.get("request")
-        should_raise_failure = False
-        with transaction.atomic():
-            challenge = _get_locked_mfa_challenge(
-                self.validated_data["mfa_challenge"],
-                MFAChallenge.Purpose.LOGIN,
-                request=request,
-            )
-            mfa_settings, _ = UserMFASettings.objects.select_for_update().get_or_create(
-                user=challenge.user
-            )
-
-            try:
-                active_secret = get_active_totp_secret(mfa_settings)
-                validation = validate_totp_code(
-                    mfa_settings=mfa_settings,
-                    code=self.validated_data["code"],
-                    secret=active_secret,
-                    prevent_reuse=True,
-                )
-            except MFALockedError:
-                emit_security_event(
-                    event_type="account_locked",
-                    severity="warning",
-                    outcome="blocked",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="mfa_locked",
-                )
-                _raise_mfa_validation_error()
-            except MFAServiceError:
-                emit_security_event(
-                    event_type="mfa_failed",
-                    severity="warning",
-                    outcome="failure",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="mfa_secret_error",
-                )
-                _raise_mfa_validation_error()
-
-            if not validation.valid:
-                failure = record_mfa_failure(
-                    mfa_settings=mfa_settings, challenge=challenge
-                )
-                emit_security_event(
-                    event_type="mfa_failed",
-                    severity="warning",
-                    outcome="failure",
-                    request=request,
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    user=challenge.user,
-                    reason="invalid_totp",
-                    failed_attempts=failure.failed_attempts,
-                    challenge_failed_attempts=failure.challenge_failed_attempts,
-                )
-                if failure.locked_until is not None:
-                    emit_security_event(
-                        event_type="account_locked",
-                        severity="warning",
-                        outcome="blocked",
-                        request=request,
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        user=challenge.user,
-                        reason="mfa_lockout_threshold",
-                    )
-                should_raise_failure = True
-            else:
-                record_mfa_success(
-                    mfa_settings=mfa_settings, timestep=validation.timestep
-                )
-                mark_challenge_used(challenge)
-                self.user = challenge.user
-                self.challenge = challenge
-
-        if should_raise_failure:
-            _raise_mfa_validation_error()
-        return {"user": self.user}
+        return {"user": self.check_code(verify_login_code)}
 
 
 class MFAStatusSerializer(serializers.ModelSerializer):
@@ -463,54 +155,15 @@ class MFAStatusSerializer(serializers.ModelSerializer):
         }
 
 
-def _get_locked_mfa_challenge(
-    raw_token: str, purpose: str, request=None
-) -> MFAChallenge:
-    challenge = (
-        MFAChallenge.objects.select_for_update()
-        .select_related("user")
-        .filter(
-            challenge_token_hash=hash_challenge_token(raw_token),
-            purpose=purpose,
-        )
-        .first()
-    )
-    if challenge is None:
-        _raise_mfa_validation_error()
-    if not challenge.is_active:
-        if challenge.used_at is not None:
-            emit_security_event(
-                event_type="mfa_challenge_reused",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_400_BAD_REQUEST,
-                user=challenge.user,
-                reason="challenge_used",
-            )
-        elif challenge.is_expired:
-            emit_security_event(
-                event_type="mfa_challenge_expired",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_400_BAD_REQUEST,
-                user=challenge.user,
-                reason="challenge_expired",
-            )
-        _raise_mfa_validation_error()
-    return challenge
-
-
 def _normalize_totp_code_or_error(code: str) -> str:
     normalized_code = str(code or "").replace(" ", "").strip()
     if len(normalized_code) != 6 or not normalized_code.isdigit():
-        _raise_mfa_validation_error()
+        raise _mfa_validation_error()
     return normalized_code
 
 
-def _raise_mfa_validation_error():
-    raise serializers.ValidationError({"detail": GENERIC_MFA_ERROR})
+def _mfa_validation_error(exc=None):
+    return serializers.ValidationError({"detail": str(exc or GENERIC_MFA_ERROR)})
 
 
 class SessionTokenRefreshSerializer(TokenRefreshSerializer):
@@ -761,26 +414,7 @@ class CompanyRegisterSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        identity_fields = {
-            "username": validated_data["username"],
-            "password": validated_data["password"],
-            "first_name": "",
-            "last_name": "",
-            "account_type": User.AccountType.COMPANY,
-        }
-        profile_data = validated_data.copy()
-        with transaction.atomic():
-            user = User.objects.create_user(**identity_fields)
-            provision_company_profile(user.id, profile_data)
-        self.company_name = profile_data["company_name"]
-        self.industry = profile_data.get("industry", "other")
-        return user
-
-
-def _principal_response_data(user):
-    if user.account_type == User.AccountType.COMPANY:
-        return {"company_id": user.id, "user_type": "company"}
-    return {"user_id": user.id, "user_type": "user"}
+        return register_company(validated_data)
 
 
 @extend_schema_field(

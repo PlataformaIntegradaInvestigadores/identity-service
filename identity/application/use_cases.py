@@ -1,6 +1,7 @@
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
 
+from identity.company_profiles import provision_company_profile
 from identity.domain.events import (
     GroupCreated,
     GroupDeleted,
@@ -36,6 +37,20 @@ def register_user(validated_data):
     user = User.objects.create(**user_data)
     ensure_profile_information(user, sync_legacy=False)
     publish_events([UserRegistered(user.id), ProfileInformationUpdated(user.id)])
+    return user
+
+
+@transaction.atomic
+def register_company(validated_data):
+    """Create the company account and its profile in social-service, or neither."""
+    user = User.objects.create_user(
+        username=validated_data["username"],
+        password=validated_data["password"],
+        first_name="",
+        last_name="",
+        account_type=User.AccountType.COMPANY,
+    )
+    provision_company_profile(user.id, validated_data.copy())
     return user
 
 

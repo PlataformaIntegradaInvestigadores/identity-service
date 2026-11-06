@@ -20,6 +20,7 @@ from rest_framework_simplejwt.exceptions import (
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .application.tokens import issue_session
 from .application.use_cases import (
     delete_group,
     delete_profile_information,
@@ -27,7 +28,7 @@ from .application.use_cases import (
     remove_group_member,
     validate_group_visibility,
 )
-from .auth_sessions import create_auth_session, revoke_session_for_refresh
+from .auth_sessions import revoke_session_for_refresh
 from .domain.exceptions import (
     DomainPermissionDenied,
     DomainRuleViolation,
@@ -589,34 +590,14 @@ class ValidateTokenView(APIView):
 
 
 def issue_final_auth_response(*, user, request, extra_data=None):
-    refresh = UserTokenObtainPairSerializer.get_token(user)
-    refresh["email"] = user.username
-    refresh["mfa"] = True
-    raw_refresh = str(refresh)
+    issued = issue_session(user=user, request=request, mfa_verified=True)
 
-    auth_session = create_auth_session(
-        user=user, raw_refresh_token=raw_refresh, request=request
-    )
-
-    if user.account_type == User.AccountType.COMPANY:
-        principal_data = {"company_id": user.id, "user_type": "company"}
-    else:
-        principal_data = {"user_id": user.id, "user_type": "user"}
-    response_data = {"access": str(refresh.access_token), **principal_data}
+    response_data = {"access": issued.access, **issued.principal}
     if extra_data:
         response_data.update(extra_data)
 
     response = Response(response_data, status=status.HTTP_200_OK)
-    set_refresh_cookie(response, raw_refresh)
-    emit_security_event(
-        event_type="login_success",
-        severity="info",
-        outcome="success",
-        request=request,
-        status_code=status.HTTP_200_OK,
-        user=user,
-        auth_session_id=str(auth_session.id),
-    )
+    set_refresh_cookie(response, issued.refresh)
     return response
 
 
@@ -746,9 +727,9 @@ class CompanyRegisterView(generics.CreateAPIView):
             {
                 "message": "Empresa registrada exitosamente",
                 "company_id": company_account.id,
-                "company_name": serializer.company_name,
+                "company_name": serializer.validated_data["company_name"],
                 "username": company_account.username,
-                "industry": serializer.industry,
+                "industry": serializer.validated_data.get("industry", "other"),
             },
             status=status.HTTP_201_CREATED,
         )
