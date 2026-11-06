@@ -18,7 +18,7 @@ from .views import (
     RegisterView,
     RemoveMemberView,
     UserDetailView,
-    UserDetailViewtoGroup,
+    GroupMemberDetailView,
     UserGroupsListView,
     UserListView,
     UserTokenObtainPairView,
@@ -69,7 +69,7 @@ urlpatterns = [
     path("test/user/groups/<pk>/leave/", GroupLeaveView.as_view(), name="group-leave"),
     path(
         "test/users/groups/<str:pk>/",
-        UserDetailViewtoGroup.as_view(),
+        GroupMemberDetailView.as_view(),
         name="user-detail-group",
     ),
     path("groups/<str:pk>/", GroupDetailView.as_view(), name="group-detail"),

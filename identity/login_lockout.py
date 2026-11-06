@@ -5,6 +5,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from .domain.lockout import lockout_minutes
 from .models import User
 
 
@@ -61,13 +62,8 @@ def record_password_failure(user: User) -> PasswordFailureResult:
 
 
 def _lockout_minutes_for_failures(failed_attempts: int) -> int | None:
-    threshold = settings.AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD
-    if threshold <= 0 or failed_attempts < threshold:
-        return None
-
-    schedule = settings.AUTH_PASSWORD_LOCKOUT_MINUTES
-    if not schedule:
-        return None
-
-    schedule_index = min((failed_attempts - threshold) // threshold, len(schedule) - 1)
-    return schedule[schedule_index]
+    return lockout_minutes(
+        failed_attempts,
+        settings.AUTH_PASSWORD_LOCKOUT_FAILURE_THRESHOLD,
+        settings.AUTH_PASSWORD_LOCKOUT_MINUTES,
+    )

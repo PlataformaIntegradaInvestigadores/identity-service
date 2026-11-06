@@ -525,60 +525,51 @@ class ValidateTokenView(APIView):
     permission_classes = [permissions.AllowAny]
     authentication_classes = []
 
+    @staticmethod
+    def _reject(request, status_code, detail, reason, user=None):
+        emit_security_event(
+            event_type="invalid_token",
+            severity="warning",
+            outcome="failure",
+            request=request,
+            status_code=status_code,
+            user=user,
+            reason=reason,
+        )
+        return Response({"detail": detail}, status=status_code)
+
     def get(self, request):
         try:
             authentication_result = JWTAuthentication().authenticate(request)
         except (AuthenticationFailed, InvalidToken, TokenError):
-            emit_security_event(
-                event_type="invalid_token",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                reason="invalid_or_expired_token",
-            )
-            return Response(
-                {"detail": "Invalid or expired token."},
-                status=status.HTTP_401_UNAUTHORIZED,
+            return self._reject(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Invalid or expired token.",
+                "invalid_or_expired_token",
             )
         if authentication_result is None:
-            emit_security_event(
-                event_type="invalid_token",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                reason="missing_token",
-            )
-            return Response(
-                {"detail": "Authentication credentials were not provided."},
-                status=status.HTTP_401_UNAUTHORIZED,
+            return self._reject(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Authentication credentials were not provided.",
+                "missing_token",
             )
         user, validated_token = authentication_result
         if not user or not user.is_authenticated:
-            emit_security_event(
-                event_type="invalid_token",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                reason="invalid_token_user",
-            )
-            return Response(
-                {"detail": "Invalid token user."}, status=status.HTTP_401_UNAUTHORIZED
+            return self._reject(
+                request,
+                status.HTTP_401_UNAUTHORIZED,
+                "Invalid token user.",
+                "invalid_token_user",
             )
         if not user.is_active:
-            emit_security_event(
-                event_type="invalid_token",
-                severity="warning",
-                outcome="failure",
-                request=request,
-                status_code=status.HTTP_403_FORBIDDEN,
+            return self._reject(
+                request,
+                status.HTTP_403_FORBIDDEN,
+                "Inactive user.",
+                "inactive_user",
                 user=user,
-                reason="inactive_user",
-            )
-            return Response(
-                {"detail": "Inactive user."}, status=status.HTTP_403_FORBIDDEN
             )
 
         response = Response(status=status.HTTP_204_NO_CONTENT)
@@ -962,7 +953,7 @@ class GroupLeaveView(generics.GenericAPIView):
         responses={200: UserListSerializer, 401: UNAUTHENTICATED, 404: NOT_FOUND},
     )
 )
-class UserDetailViewtoGroup(generics.RetrieveAPIView):
+class GroupMemberDetailView(generics.RetrieveAPIView):
     queryset = User.objects.filter(account_type=User.AccountType.RESEARCHER)
     serializer_class = UserListSerializer
     permission_classes = [permissions.IsAuthenticated]

@@ -13,6 +13,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .auth_sessions import get_client_ip
+from .domain.lockout import lockout_minutes
 from .models import MFAChallenge, User, UserMFASettings
 
 GENERIC_MFA_ERROR = "Invalid credentials or verification code"
@@ -309,16 +310,11 @@ def _normalize_totp_code(code: str) -> str:
 
 
 def _lockout_minutes_for_failures(failed_attempts: int) -> int | None:
-    threshold = settings.MFA_LOCKOUT_FAILURE_THRESHOLD
-    if failed_attempts < threshold:
-        return None
-
-    schedule = settings.MFA_LOCKOUT_MINUTES
-    if not schedule:
-        return None
-
-    schedule_index = min((failed_attempts - threshold) // threshold, len(schedule) - 1)
-    return schedule[schedule_index]
+    return lockout_minutes(
+        failed_attempts,
+        settings.MFA_LOCKOUT_FAILURE_THRESHOLD,
+        settings.MFA_LOCKOUT_MINUTES,
+    )
 
 
 def _get_fernet() -> Fernet:
