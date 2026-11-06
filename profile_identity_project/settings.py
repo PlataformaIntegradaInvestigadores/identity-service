@@ -11,7 +11,9 @@ load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "profile-identity-dev-secret")
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
-DEBUG = os.getenv("DEBUG", "True") == "True"
+# Off unless the environment turns it on: a deployment that forgets the variable must
+# not start with Django's debug pages enabled. .env.example sets DEBUG=True for local work.
+DEBUG = os.getenv("DEBUG", "False") == "True"
 ALLOWED_HOSTS = [
     host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()
 ]
