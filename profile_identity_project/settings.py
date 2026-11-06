@@ -2,6 +2,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 from identity.openapi_texts import SPECTACULAR_DESCRIPTION, SPECTACULAR_TAGS
@@ -9,11 +10,17 @@ from identity.openapi_texts import SPECTACULAR_DESCRIPTION, SPECTACULAR_TAGS
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "profile-identity-dev-secret")
-JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
 # Off unless the environment turns it on: a deployment that forgets the variable must
 # not start with Django's debug pages enabled. .env.example sets DEBUG=True for local work.
 DEBUG = os.getenv("DEBUG", "False") == "True"
+# JWT_SIGNING_KEY and MFA_SECRET_ENCRYPTION_KEY fall back to SECRET_KEY, so a public
+# default would let anyone forge tokens: outside DEBUG the key must come from the env.
+SECRET_KEY = os.getenv("SECRET_KEY") or (
+    "profile-identity-dev-secret" if DEBUG else None
+)
+if SECRET_KEY is None:
+    raise ImproperlyConfigured("SECRET_KEY must be set when DEBUG is off.")
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
 ALLOWED_HOSTS = [
     host.strip() for host in os.getenv("ALLOWED_HOSTS", "*").split(",") if host.strip()
 ]
@@ -66,6 +73,8 @@ TEMPLATES = [
 WSGI_APPLICATION = "profile_identity_project.wsgi.application"
 
 if os.getenv("USE_SQLITE_FOR_TESTS", "False") == "True":
+    # Password hashing dominates the test time; the algorithm is irrelevant there.
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",

@@ -16,13 +16,18 @@ Parte del org multi-repo `PlataformaIntegradaInvestigadores`. Comparte el puerto
 
 ```
 identity/
-  application/use_cases.py      # Casos de uso de negocio
-  domain/{events,exceptions,policies}.py
+  application/                  # Casos de uso
+    use_cases.py                #   usuarios, perfiles, grupos y alta de empresas
+    authentication.py           #   paso de contraseña del login (bloqueo, siguiente paso MFA)
+    mfa.py                      #   alta de MFA y verificación TOTP
+    tokens.py                   #   claims, sesión y datos del principal
+  domain/{events,exceptions,policies,lockout}.py
   infrastructure/legacy_event_handlers.py
   migrations/
   management/commands/          # import_legacy_identity, retry_legacy_sync_outbox, sync_company_identities
   tests/
-  models.py, views.py, serializers.py, urls.py, admin.py
+  views/                        # system, auth, mfa, users, profile, groups
+  models.py, serializers.py, urls.py, admin.py
   auth_sessions.py, authentication_backends.py, mfa_services.py, login_lockout.py
   legacy_sync.py, company_profiles.py, profile_services.py
   security_events.py, metrics.py, middleware.py, exception_handlers.py

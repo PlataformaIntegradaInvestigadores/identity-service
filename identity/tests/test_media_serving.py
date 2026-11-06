@@ -2,12 +2,22 @@
 /media/profile_pictures/ to this service), but safely: uploads are untrusted
 and share the origin of the app."""
 
+import shutil
+import tempfile
+from pathlib import Path
+
 from django.conf import settings
 from django.test import TestCase, override_settings
 
 
 class TestMediaServing(TestCase):
     def setUp(self):
+        # Uploads go to a throwaway folder, never to the repository's media/.
+        media_root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, media_root, ignore_errors=True)
+        override = override_settings(MEDIA_ROOT=media_root)
+        override.enable()
+        self.addCleanup(override.disable)
         self.directory = settings.MEDIA_ROOT / "profile_pictures"
         self.directory.mkdir(parents=True, exist_ok=True)
         self.created = []
@@ -41,6 +51,7 @@ class TestMediaServing(TestCase):
         self._make(self.directory, "zz-test-media.html", b"<script>1</script>")
 
         response = self.client.get("/media/profile_pictures/zz-test-media.html")
+        self.addCleanup(response.close)  # release the file handle (Windows)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Disposition"], "attachment")

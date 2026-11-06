@@ -8,3 +8,7 @@ class DomainPermissionDenied(DomainRuleViolation):
 
 class DomainValidationError(DomainRuleViolation):
     pass
+
+
+class AuthenticationRejected(DomainRuleViolation):
+    """Credentials, lockout or MFA state do not allow the login to continue."""

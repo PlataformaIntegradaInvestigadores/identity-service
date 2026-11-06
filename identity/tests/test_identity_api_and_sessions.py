@@ -235,7 +235,7 @@ class IdentityApiTests(APITestCase):
         user = User.objects.get(username="maria@example.com")
         self.assertTrue(ProfileInformation.objects.filter(user=user).exists())
 
-    @patch("identity.serializers.provision_company_profile")
+    @patch("identity.application.use_cases.provision_company_profile")
     def test_company_registration_creates_identity_account_and_social_profile(
         self, provision_profile
     ):
