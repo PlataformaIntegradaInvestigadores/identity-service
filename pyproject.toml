@@ -1,8 +1,11 @@
 [tool.ruff]
 target-version = "py311"
+# Applied migrations are never edited, not even for style.
+extend-exclude = ["**/migrations/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.black]
 target-version = ["py311"]
+extend-exclude = "/migrations/"
