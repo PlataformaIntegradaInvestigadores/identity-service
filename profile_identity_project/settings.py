@@ -11,7 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 # Off unless the environment turns it on: a deployment that forgets the variable must
-# not start with Django's debug pages enabled. .env.example sets DEBUG=True for local work.
+# not start with Django's debug pages enabled. .env.example sets DEBUG=True for local
+# work.
 DEBUG = os.getenv("DEBUG", "False") == "True"
 # JWT_SIGNING_KEY and MFA_SECRET_ENCRYPTION_KEY fall back to SECRET_KEY, so a public
 # default would let anyone forge tokens: outside DEBUG the key must come from the env.

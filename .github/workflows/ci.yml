@@ -33,7 +33,11 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Instalar dependencias
-        run: pip install -q -r requirements.txt pytest pytest-django pytest-cov
+        run: pip install -q -r requirements.txt pytest pytest-django pytest-cov ruff==0.16.10 black==26.10.0
+      - name: ruff check
+        run: ruff check .
+      - name: black --check
+        run: black --check .
       - name: Ejecutar tests
         run: |
           pytest -v --tb=short \
